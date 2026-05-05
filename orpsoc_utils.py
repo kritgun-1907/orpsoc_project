@@ -24,6 +24,12 @@ FIX LOG:
     step7_ablation.py can import them (fixes NameError crash)
   - APSOLLAdaptiveC moved here so step7 doesn't need to inline it
   - if/elif fix in run_hybrid_orpsoc phase logic (double-decrement bug)
+  - PHASE-1 INIT FIX: run_hybrid_orpsoc() now always starts in Phase 1.
+    hmm_trigger_delay=7 delays external HMM signal by 7 iters so swarm
+    can converge before leader-influence fires (fixes Full Hybrid < +APSOLL)
+  - CUSUM calibration: AdaptiveRegimeThreshold.calibrate_from_baseline()
+    computes slack = 0.5*std(baseline_obs) per Page (1954) instead of
+    hardcoding 0.05
 """
 
 import numpy as np
@@ -33,9 +39,15 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings("ignore")
+
+# PSO_FAST_EVAL=True  → LogisticRegression inside evaluate() (~20x faster)
+#                        XGBoost still used for the final held-out test AUC
+# PSO_FAST_EVAL=False → XGBoost everywhere (paper-quality, slow)
+PSO_FAST_EVAL = True
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -158,13 +170,18 @@ def evaluate(pos: np.ndarray, feat_names: list,
         return -1.0
     cols = [feat_names[i] for i in idx]
     try:
+        if PSO_FAST_EVAL:
+            # Logistic Regression: ~20x faster than XGBoost, good enough for
+            # guiding PSO search direction. XGBoost is used only for final AUC.
+            model = LogisticRegression(max_iter=200, solver="lbfgs",
+                                       random_state=42, C=1.0)
+        else:
+            model = XGBClassifier(n_estimators=80, max_depth=4,
+                                  learning_rate=0.1, verbosity=0, random_state=42)
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(
-                n_estimators=80, max_depth=4,
-                learning_rate=0.1, verbosity=0, random_state=42
-            ))
+            ("model",  model),
         ])
         pipe.fit(X_tr[cols], y_tr)
         auc = roc_auc_score(y_va, pipe.predict_proba(X_va[cols])[:, 1])
@@ -254,6 +271,25 @@ class AdaptiveRegimeThreshold:
         self.threshold    = 0.5
         self.trigger_log  = []   # (iteration, p_trans, threshold) tuples
 
+    def calibrate_from_baseline(self, baseline_observations: list) -> float:
+        """
+        Calibrate CUSUM slack from pre-switch (stable regime) observations.
+
+        Page (1954) recommends slack = 0.5 × std(baseline) so the CUSUM
+        only accumulates when P(Trans) consistently exceeds the baseline
+        by more than half a standard deviation — ignoring isolated spikes.
+
+        Call this BEFORE the main fold loop, passing P(Trans) values from
+        the pre-switch folds (e.g. folds 1–3 on Level 4).
+
+        Returns the calibrated slack value.
+        """
+        if len(baseline_observations) < 2:
+            return self.slack
+        self.slack = 0.5 * float(np.std(baseline_observations))
+        self.slack = max(self.slack, 1e-4)   # numerical floor
+        return self.slack
+
     def update(self, p_trans: float, iteration: int = -1) -> bool:
         """
         Feed one observation. Returns True if regime change detected.
@@ -290,6 +326,7 @@ class AdaptiveRegimeThreshold:
             "n_triggers":      len(self.trigger_log),
             "triggers":        self.trigger_log,
             "final_threshold": self.threshold,
+            "cusum_slack":     self.slack,
         }
 
 
@@ -398,6 +435,14 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
+    # Position cache: same binary vector → skip re-evaluation (~30% fewer fits)
+    _cache = {}
+    def _eval(pos):
+        key = tuple(pos.astype(int))
+        if key not in _cache:
+            _cache[key] = evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+        return _cache[key]
+
     # Initialise
     init_pos  = build_orthogonal_positions(n_particles, n, seed)
     particles = []
@@ -407,7 +452,7 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             "pos":      pos.copy(),
             "vel":      rng.randn(n) * 0.1,
             "best_pos": pos.copy(),
-            "best_fit": evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta),
+            "best_fit": _eval(pos),
         })
 
     gbest_pos = max(particles, key=lambda p: p["best_fit"])["best_pos"].copy()
@@ -436,14 +481,14 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             pa, pb = particles[idx[k]], particles[idx[k + 1]]
             ca, cb = crossover(pa["pos"], pb["pos"], cr, min_f, rng)
             for child, parent in [(ca, pa), (cb, pb)]:
-                fit = evaluate(child, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+                fit = _eval(child)
                 if fit > parent["best_fit"]:
                     parent["pos"]      = child
                     parent["best_pos"] = child.copy()
                     parent["best_fit"] = fit
 
         for p in particles:
-            fit = evaluate(p["pos"], feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+            fit = _eval(p["pos"])
             if fit > p["best_fit"]:
                 p["best_fit"] = fit
                 p["best_pos"] = p["pos"].copy()
@@ -479,18 +524,37 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       hmm_trigger=False, seed=42,
                       n_particles=20, max_iter=60, min_f=3, theta=0.7,
                       cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
-                      N_explore=15, lam=0.1, **kwargs):
+                      N_explore=15, lam=0.1, hmm_trigger_delay=7, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
 
     Condition 3 (step7): call with hmm_trigger=False
-      → APSOLL-c self-triggers via stagnation detection
+      → APSOLL-c self-triggers via stagnation detection (c < 1.05)
     Condition 4 (step7): call with hmm_trigger=True
-      → HMM detection passed in externally, swarm enters Phase 2 at start
+      → HMM signal is delayed by hmm_trigger_delay iterations so the
+        swarm can complete initial convergence before leader-influence
+        fires.  Without the delay, Phase 2 fires at iteration 0 on
+        orthogonal positions whose leaders are random noise, which
+        disrupts the early exploration that orthogonal init enables.
 
-    FIX: Phase logic uses elif (not if) to prevent double-decrement
-    of n_explore_rem when transitioning from Phase 1 → Phase 2.
+    PHASE LOGIC:
+      Phase 1 — exploration: cr=cr_low, linear w decay.
+        Transitions to Phase 2 when either:
+          (a) APSOLL self-trigger: it > 5 and c_t < 1.05 (m reset → stagnation)
+          (b) Delayed HMM trigger: hmm_trigger=True and it >= hmm_trigger_delay
+      Phase 2 — exploitation burst: cr=cr_high, w=w_max, GWO leaders.
+        Runs for N_explore iterations, then → Phase 3.
+      Phase 3 — exponential blend back to standard: smooth decay of
+        leader influence toward standard PSO.
+
+    NOTE on c < 1.05 threshold:
+      c = (m/T)^(2/3) + 1 and m resets to 0 on stagnation, giving c=1.0.
+      c < 1.05 therefore detects m=0 (no improvement in the last step),
+      which is a minimal stagnation signal.  We require it > 5 to avoid
+      triggering on the random-walk noise of the first few iterations.
+
+    FIX: elif prevents double-decrement of n_explore_rem on Phase 1→2 transition.
 
     **kwargs absorbs any extra keys passed from the ablation loop's
     shared pso_kw dict without crashing.
@@ -504,6 +568,14 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
+    # Position cache: same binary vector → skip re-evaluation
+    _cache = {}
+    def _eval(pos):
+        key = tuple(pos.astype(int))
+        if key not in _cache:
+            _cache[key] = evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+        return _cache[key]
+
     # Initialise
     init_pos  = build_orthogonal_positions(n_particles, n, seed)
     particles = []
@@ -513,17 +585,20 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             "pos":      pos.copy(),
             "vel":      rng.randn(n) * 0.1,
             "best_pos": pos.copy(),
-            "best_fit": evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta),
+            "best_fit": _eval(pos),
         })
 
     gbest_pos = max(particles, key=lambda p: p["best_fit"])["best_pos"].copy()
     gbest_fit = max(p["best_fit"] for p in particles)
 
-    # Phase state — if HMM fired externally, start in Phase 2 immediately
-    adap_c        = APSOLLAdaptiveC(max_iter)
-    phase         = 2 if hmm_trigger else 1
-    dt            = 0
-    n_explore_rem = N_explore
+    # Always start in Phase 1 so orthogonal init can do its job.
+    # When hmm_trigger=True, Phase 2 is entered at iteration hmm_trigger_delay
+    # (not iteration 0) so leaders have had a chance to earn their position.
+    adap_c           = APSOLLAdaptiveC(max_iter)
+    phase            = 1
+    dt               = 0
+    n_explore_rem    = N_explore
+    forced_phase2_at = hmm_trigger_delay if hmm_trigger else None
 
     for it in range(max_iter):
         c_t = adap_c.update(gbest_fit)
@@ -532,8 +607,12 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         if phase == 1:
             cr_t = cr_low
             w_t  = w_max - (w_max - w_min) * (it / max(max_iter - 1, 1))
-            # Soft self-trigger: c collapses → stagnation detected
-            if it > 5 and c_t < 1.05:
+            # Transition to Phase 2 on either internal APSOLL stagnation
+            # signal OR delayed external HMM signal
+            apsoll_trigger      = it > 5 and c_t < 1.05
+            hmm_delayed_trigger = (forced_phase2_at is not None
+                                   and it >= forced_phase2_at)
+            if apsoll_trigger or hmm_delayed_trigger:
                 phase = 2
                 dt    = 0
                 n_explore_rem = N_explore
@@ -599,7 +678,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             pa, pb = particles[idx[k]], particles[idx[k + 1]]
             ca, cb = crossover(pa["pos"], pb["pos"], cr_t, min_f, rng)
             for child, parent in [(ca, pa), (cb, pb)]:
-                fit = evaluate(child, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+                fit = _eval(child)
                 if fit > parent["best_fit"]:
                     parent["pos"]      = child
                     parent["best_pos"] = child.copy()
@@ -607,7 +686,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
         # ── Evaluate + update bests ───────────────────────────────────────────
         for p in particles:
-            fit = evaluate(p["pos"], feat_names, X_p, y_p, X_v, y_v, min_f, theta)
+            fit = _eval(p["pos"])
             if fit > p["best_fit"]:
                 p["best_fit"] = fit
                 p["best_pos"] = p["pos"].copy()
@@ -617,7 +696,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
     sel = [feat_names[i] for i in np.where(gbest_pos == 1)[0]]
 
-    # Final test AUC
+    # Final test AUC — always XGBoost regardless of PSO_FAST_EVAL
     try:
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),

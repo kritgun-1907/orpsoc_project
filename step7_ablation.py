@@ -50,7 +50,7 @@ from orpsoc_utils import (
 # ══════════════════════════════════════════════════════════════════════════════
 
 FAST_MODE   = True    # True = reduced iters for debugging; False = paper runs
-N_SEEDS     = 5  if FAST_MODE else 30
+N_SEEDS     = 10 if FAST_MODE else 30   # 10 seeds gives enough variance signal
 MAX_ITER    = 20 if FAST_MODE else 60
 N_PARTICLES = 10 if FAST_MODE else 20
 N_SPLITS    = 6  if FAST_MODE else 8
@@ -237,9 +237,10 @@ for level_key, level_name in LEVELS.items():
                         for cond in CONDITIONS}
 
         # Shared HMM threshold object per seed (stateful across folds)
+        # k=85 reduces false alarms vs k=75 (see step5 sensitivity table)
         hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
                                                 lookback=50,
-                                                percentile_k=75.0)
+                                                percentile_k=85.0)
 
         for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
             if len(y_te.unique()) < 2:
@@ -253,6 +254,16 @@ for level_key, level_name in LEVELS.items():
                 N_explore=max(5, MAX_ITER // 4), lam=0.1,
             )
 
+            # Ground-truth signal features for recall scoring.
+            # signal_r1 (regime 1 signals) + signal_r2 (regime 2 signals)
+            # are known because we generated the data; recall = fraction found.
+            true_signals = set(signal_r1 + signal_r2)
+
+            def _recall(selected):
+                if not true_signals:
+                    return float("nan")
+                return len(true_signals & set(selected)) / len(true_signals)
+
             # ── Condition 1: Baseline ──────────────────────────────────────
             t0  = time.time()
             r1  = run_baseline(X_tr, y_tr, X_te, y_te, feat_names,
@@ -260,12 +271,16 @@ for level_key, level_name in LEVELS.items():
             seed_results["baseline"]["fold_aucs"].append(r1["auc"])
             seed_results["baseline"]["fold_selected"].append(r1["selected"])
             seed_results["baseline"]["runtimes"].append(time.time() - t0)
+            seed_results["baseline"].setdefault("fold_recall", []).append(
+                _recall(r1["selected"]))
 
             # ── Condition 2: Standard OrPSOC (from orpsoc_utils) ───────────
             r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
             seed_results["standard_orpsoc"]["fold_aucs"].append(r2["auc"])
             seed_results["standard_orpsoc"]["fold_selected"].append(r2["selected"])
             seed_results["standard_orpsoc"]["runtimes"].append(r2["runtime"])
+            seed_results["standard_orpsoc"].setdefault("fold_recall", []).append(
+                _recall(r2["selected"]))
 
             # ── Condition 3: +APSOLL, no HMM (from orpsoc_utils) ──────────
             r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
@@ -273,6 +288,8 @@ for level_key, level_name in LEVELS.items():
             seed_results["apsoll"]["fold_aucs"].append(r3["auc"])
             seed_results["apsoll"]["fold_selected"].append(r3["selected"])
             seed_results["apsoll"]["runtimes"].append(r3["runtime"])
+            seed_results["apsoll"].setdefault("fold_recall", []).append(
+                _recall(r3["selected"]))
 
             # ── Condition 4: Full Hybrid (HMM trigger, from orpsoc_utils) ──
             triggered, p_trans = get_hmm_trigger(
@@ -284,6 +301,8 @@ for level_key, level_name in LEVELS.items():
             seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
             seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])
             seed_results["full_hybrid"]["runtimes"].append(r4["runtime"])
+            seed_results["full_hybrid"].setdefault("fold_recall", []).append(
+                _recall(r4["selected"]))
 
         # Compute Jaccard stability for this seed
         for cond in CONDITIONS:
@@ -329,8 +348,27 @@ for level_key, ldata in ALL_RESULTS.items():
         seed_aucs = [np.mean(sr["fold_aucs"]) for sr in ldata["conditions"][cond]]
         m, s = np.mean(seed_aucs), np.std(seed_aucs)
         row += f"{m:.3f}±{s:.3f}  "
+        # Feature recall: mean across seeds and folds (nan-safe)
+        seed_recalls = []
+        for sr in ldata["conditions"][cond]:
+            recalls = [v for v in sr.get("fold_recall", [])
+                       if not (isinstance(v, float) and np.isnan(v))]
+            if recalls:
+                seed_recalls.append(float(np.mean(recalls)))
+        mean_recall = float(np.mean(seed_recalls)) if seed_recalls else float("nan")
         summary[level_key][cond] = {"mean": float(m), "std": float(s),
-                                     "seed_aucs": [float(v) for v in seed_aucs]}
+                                     "seed_aucs": [float(v) for v in seed_aucs],
+                                     "mean_recall": mean_recall}
+    print(row)
+
+print()
+print("  FEATURE RECALL  (fraction of true signal features recovered)")
+print(f"{'Level':<28}" + "".join(f"{'Cond'+str(i+1):>14}" for i in range(4)))
+for level_key, ldata in ALL_RESULTS.items():
+    row = f"{ldata['level_name'][:27]:<28}"
+    for cond in CONDITIONS:
+        mr = summary[level_key][cond].get("mean_recall", float("nan"))
+        row += f"{'nan' if np.isnan(mr) else f'{mr:.3f}':>14}"
     print(row)
 
 # FIX: N_SPLITS saved into config so step8 can read it as cfg["n_splits"]
