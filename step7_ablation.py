@@ -49,7 +49,7 @@ from orpsoc_utils import (
 #  CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-FAST_MODE   = True    # True = reduced iters for debugging; False = paper runs
+FAST_MODE   = False    # True = reduced iters for debugging; False = paper runs
 N_SEEDS     = 10 if FAST_MODE else 30   # 10 seeds gives enough variance signal
 MAX_ITER    = 20 if FAST_MODE else 60
 N_PARTICLES = 10 if FAST_MODE else 20
