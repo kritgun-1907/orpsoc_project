@@ -39,14 +39,13 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
-from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 import warnings
 warnings.filterwarnings("ignore")
 
-# PSO_FAST_EVAL=True  → LogisticRegression inside evaluate() (~20x faster)
-#                        XGBoost still used for the final held-out test AUC
-# PSO_FAST_EVAL=False → XGBoost everywhere (paper-quality, slow)
+# PSO_FAST_EVAL=True  → LGBMClassifier (fast config) inside evaluate()
+#                        Same model family as final AUC — no proxy mismatch.
+# PSO_FAST_EVAL=False → LGBMClassifier (full config) — paper-quality, slower.
 PSO_FAST_EVAL = True
 
 
@@ -171,13 +170,13 @@ def evaluate(pos: np.ndarray, feat_names: list,
     cols = [feat_names[i] for i in idx]
     try:
         if PSO_FAST_EVAL:
-            # Logistic Regression: ~20x faster than XGBoost, good enough for
-            # guiding PSO search direction. XGBoost is used only for final AUC.
-            model = LogisticRegression(max_iter=200, solver="lbfgs",
-                                       random_state=42, C=1.0)
+            # Fast LightGBM: same model family as final scorer, no proxy mismatch.
+            # Fewer estimators/leaves keeps PSO iteration cost low.
+            model = LGBMClassifier(n_estimators=40, num_leaves=15,
+                                   learning_rate=0.1, verbosity=-1, random_state=42)
         else:
-            model = XGBClassifier(n_estimators=80, max_depth=4,
-                                  learning_rate=0.1, verbosity=0, random_state=42)
+            model = LGBMClassifier(n_estimators=100, num_leaves=31,
+                                   learning_rate=0.1, verbosity=-1, random_state=42)
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
@@ -503,9 +502,9 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(n_estimators=80, max_depth=4,
-                                     learning_rate=0.1, verbosity=0,
-                                     random_state=seed))
+            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed))
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])
@@ -524,7 +523,8 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       hmm_trigger=False, seed=42,
                       n_particles=20, max_iter=60, min_f=3, theta=0.7,
                       cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
-                      N_explore=15, lam=0.1, hmm_trigger_delay=7, **kwargs):
+                      N_explore=15, lam=0.1, hmm_trigger_delay=7,
+                      warm_start_pos=None, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
@@ -537,6 +537,13 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         fires.  Without the delay, Phase 2 fires at iteration 0 on
         orthogonal positions whose leaders are random noise, which
         disrupts the early exploration that orthogonal init enables.
+
+    warm_start_pos : optional np.ndarray of shape (n_features,)
+      gbest position carried from the previous fold. When provided and
+      hmm_trigger=False, particle[0] is seeded from warm_start_pos so
+      the swarm starts from a known-good solution rather than from scratch.
+      When hmm_trigger=True the warm_start is ignored and a full orthogonal
+      re-initialisation is used — the regime change demands a clean slate.
 
     PHASE LOGIC:
       Phase 1 — exploration: cr=cr_low, linear w decay.
@@ -587,6 +594,23 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             "best_pos": pos.copy(),
             "best_fit": _eval(pos),
         })
+
+    # Warm-start: seed particle[0] from the previous fold's gbest when there
+    # is no regime change.  When HMM fires, ignore warm_start — the regime
+    # change demands a full orthogonal re-initialisation (the clean slate IS
+    # the mechanism that lets the swarm pivot to new regime features).
+    if warm_start_pos is not None and not hmm_trigger:
+        ws = warm_start_pos.copy()
+        # Enforce min_f constraint on the carried position
+        if ws.sum() < min_f:
+            zeros = np.where(ws == 0)[0]
+            need  = min_f - int(ws.sum())
+            if len(zeros) >= need:
+                ws[rng.choice(zeros, size=need, replace=False)] = 1
+        fit_ws = _eval(ws)
+        particles[0]["pos"]      = ws
+        particles[0]["best_pos"] = ws.copy()
+        particles[0]["best_fit"] = fit_ws
 
     gbest_pos = max(particles, key=lambda p: p["best_fit"])["best_pos"].copy()
     gbest_fit = max(p["best_fit"] for p in particles)
@@ -696,14 +720,14 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
     sel = [feat_names[i] for i in np.where(gbest_pos == 1)[0]]
 
-    # Final test AUC — always XGBoost regardless of PSO_FAST_EVAL
+    # Final test AUC — LightGBM consistent with PSO fitness evaluator
     try:
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(n_estimators=80, max_depth=4,
-                                     learning_rate=0.1, verbosity=0,
-                                     random_state=seed))
+            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed))
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])
@@ -711,7 +735,8 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         auc = 0.5
 
     return {"auc": auc, "selected": sel, "n_sel": len(sel),
-            "runtime": time.time() - t0}
+            "runtime": time.time() - t0,
+            "gbest_pos": gbest_pos.copy()}
 
 
 print("orpsoc_utils.py loaded — shared utilities ready.")

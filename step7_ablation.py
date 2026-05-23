@@ -34,7 +34,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
 from orpsoc_utils import (
     sigmoid, build_orthogonal_positions, partial_reinit,
@@ -146,14 +146,14 @@ class SimpleHMM:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
-    """No feature selection — use all features."""
+    """No feature selection — use all features. LightGBM consistent with PSO conditions."""
     try:
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(n_estimators=80, max_depth=4,
-                                     learning_rate=0.1, verbosity=0,
-                                     random_state=seed))
+            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed))
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:,1])
@@ -231,6 +231,8 @@ for level_key, level_name in LEVELS.items():
 
     level_results = {cond: [] for cond in CONDITIONS}
 
+    switch_fold = N_SPLITS // 2   # folds < switch_fold are pre-switch
+
     for seed in range(N_SEEDS):
         seed_results = {cond: {"fold_aucs": [], "fold_selected": [],
                                 "runtimes": []}
@@ -241,6 +243,10 @@ for level_key, level_name in LEVELS.items():
         hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
                                                 lookback=50,
                                                 percentile_k=85.0)
+
+        # Warm-start position carried from fold k → fold k+1 (Full Hybrid only).
+        # Reset to None at the start of each seed so seeds are independent.
+        warm_start_fh = None
 
         for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
             if len(y_te.unique()) < 2:
@@ -258,11 +264,18 @@ for level_key, level_name in LEVELS.items():
             # signal_r1 (regime 1 signals) + signal_r2 (regime 2 signals)
             # are known because we generated the data; recall = fraction found.
             true_signals = set(signal_r1 + signal_r2)
+            is_pre_switch = (fold_idx < switch_fold)
 
             def _recall(selected):
                 if not true_signals:
                     return float("nan")
                 return len(true_signals & set(selected)) / len(true_signals)
+
+            def _r1_hits(selected):
+                return len(set(signal_r1) & set(selected))
+
+            def _r2_hits(selected):
+                return len(set(signal_r2) & set(selected))
 
             # ── Condition 1: Baseline ──────────────────────────────────────
             t0  = time.time()
@@ -273,6 +286,12 @@ for level_key, level_name in LEVELS.items():
             seed_results["baseline"]["runtimes"].append(time.time() - t0)
             seed_results["baseline"].setdefault("fold_recall", []).append(
                 _recall(r1["selected"]))
+            seed_results["baseline"].setdefault("fold_r1_hits", []).append(
+                _r1_hits(r1["selected"]))
+            seed_results["baseline"].setdefault("fold_r2_hits", []).append(
+                _r2_hits(r1["selected"]))
+            seed_results["baseline"].setdefault("fold_is_pre", []).append(
+                is_pre_switch)
 
             # ── Condition 2: Standard OrPSOC (from orpsoc_utils) ───────────
             r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
@@ -281,6 +300,12 @@ for level_key, level_name in LEVELS.items():
             seed_results["standard_orpsoc"]["runtimes"].append(r2["runtime"])
             seed_results["standard_orpsoc"].setdefault("fold_recall", []).append(
                 _recall(r2["selected"]))
+            seed_results["standard_orpsoc"].setdefault("fold_r1_hits", []).append(
+                _r1_hits(r2["selected"]))
+            seed_results["standard_orpsoc"].setdefault("fold_r2_hits", []).append(
+                _r2_hits(r2["selected"]))
+            seed_results["standard_orpsoc"].setdefault("fold_is_pre", []).append(
+                is_pre_switch)
 
             # ── Condition 3: +APSOLL, no HMM (from orpsoc_utils) ──────────
             r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
@@ -290,19 +315,38 @@ for level_key, level_name in LEVELS.items():
             seed_results["apsoll"]["runtimes"].append(r3["runtime"])
             seed_results["apsoll"].setdefault("fold_recall", []).append(
                 _recall(r3["selected"]))
+            seed_results["apsoll"].setdefault("fold_r1_hits", []).append(
+                _r1_hits(r3["selected"]))
+            seed_results["apsoll"].setdefault("fold_r2_hits", []).append(
+                _r2_hits(r3["selected"]))
+            seed_results["apsoll"].setdefault("fold_is_pre", []).append(
+                is_pre_switch)
 
-            # ── Condition 4: Full Hybrid (HMM trigger, from orpsoc_utils) ──
+            # ── Condition 4: Full Hybrid (HMM trigger + warm-start) ────────
             triggered, p_trans = get_hmm_trigger(
                 X_tr, feat_name=feat_names[0],
                 threshold_obj=hmm_threshold
             )
+            # Warm-start: carry gbest from fold k when no regime change.
+            # When triggered: full orthogonal re-init (warm_start ignored inside).
             r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=triggered, **pso_kw)
+                                   hmm_trigger=triggered,
+                                   warm_start_pos=None if triggered else warm_start_fh,
+                                   **pso_kw)
+            # Always update warm_start after the fold so fold k+1 can use it
+            warm_start_fh = r4["gbest_pos"]
+
             seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
             seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])
             seed_results["full_hybrid"]["runtimes"].append(r4["runtime"])
             seed_results["full_hybrid"].setdefault("fold_recall", []).append(
                 _recall(r4["selected"]))
+            seed_results["full_hybrid"].setdefault("fold_r1_hits", []).append(
+                _r1_hits(r4["selected"]))
+            seed_results["full_hybrid"].setdefault("fold_r2_hits", []).append(
+                _r2_hits(r4["selected"]))
+            seed_results["full_hybrid"].setdefault("fold_is_pre", []).append(
+                is_pre_switch)
 
         # Compute Jaccard stability for this seed
         for cond in CONDITIONS:
@@ -348,7 +392,8 @@ for level_key, ldata in ALL_RESULTS.items():
         seed_aucs = [np.mean(sr["fold_aucs"]) for sr in ldata["conditions"][cond]]
         m, s = np.mean(seed_aucs), np.std(seed_aucs)
         row += f"{m:.3f}±{s:.3f}  "
-        # Feature recall: mean across seeds and folds (nan-safe)
+
+        # Overall recall (nan-safe)
         seed_recalls = []
         for sr in ldata["conditions"][cond]:
             recalls = [v for v in sr.get("fold_recall", [])
@@ -356,9 +401,36 @@ for level_key, ldata in ALL_RESULTS.items():
             if recalls:
                 seed_recalls.append(float(np.mean(recalls)))
         mean_recall = float(np.mean(seed_recalls)) if seed_recalls else float("nan")
-        summary[level_key][cond] = {"mean": float(m), "std": float(s),
-                                     "seed_aucs": [float(v) for v in seed_aucs],
-                                     "mean_recall": mean_recall}
+
+        # Pre/post switch recall split (Level 4 diagnostic)
+        pre_recalls, post_recalls = [], []
+        for sr in ldata["conditions"][cond]:
+            is_pre = sr.get("fold_is_pre", [])
+            recalls = sr.get("fold_recall", [])
+            pre  = [r for r, p in zip(recalls, is_pre)
+                    if p and not (isinstance(r, float) and np.isnan(r))]
+            post = [r for r, p in zip(recalls, is_pre)
+                    if not p and not (isinstance(r, float) and np.isnan(r))]
+            if pre:  pre_recalls.append(float(np.mean(pre)))
+            if post: post_recalls.append(float(np.mean(post)))
+        mean_recall_pre  = float(np.mean(pre_recalls))  if pre_recalls  else float("nan")
+        mean_recall_post = float(np.mean(post_recalls)) if post_recalls else float("nan")
+
+        # Per-fold r1/r2 hit counts averaged across seeds
+        fold_r1 = np.array([sr.get("fold_r1_hits", []) for sr in ldata["conditions"][cond]])
+        fold_r2 = np.array([sr.get("fold_r2_hits", []) for sr in ldata["conditions"][cond]])
+        mean_r1_per_fold = fold_r1.mean(axis=0).tolist() if fold_r1.size > 0 else []
+        mean_r2_per_fold = fold_r2.mean(axis=0).tolist() if fold_r2.size > 0 else []
+
+        summary[level_key][cond] = {
+            "mean": float(m), "std": float(s),
+            "seed_aucs":        [float(v) for v in seed_aucs],
+            "mean_recall":      mean_recall,
+            "mean_recall_pre":  mean_recall_pre,
+            "mean_recall_post": mean_recall_post,
+            "mean_r1_hits_per_fold": mean_r1_per_fold,
+            "mean_r2_hits_per_fold": mean_r2_per_fold,
+        }
     print(row)
 
 print()
@@ -370,6 +442,16 @@ for level_key, ldata in ALL_RESULTS.items():
         mr = summary[level_key][cond].get("mean_recall", float("nan"))
         row += f"{'nan' if np.isnan(mr) else f'{mr:.3f}':>14}"
     print(row)
+
+print()
+print("  PRE/POST SWITCH RECALL  (Level 4 — Regime Switch only)")
+print(f"{'Condition':<22}  {'Pre-switch':>12}  {'Post-switch':>12}")
+if "regime_switch" in summary:
+    for cond, label in CONDITIONS.items():
+        pre  = summary["regime_switch"][cond].get("mean_recall_pre",  float("nan"))
+        post = summary["regime_switch"][cond].get("mean_recall_post", float("nan"))
+        def _fmt(v): return "nan" if (isinstance(v, float) and np.isnan(v)) else f"{v:.3f}"
+        print(f"  {label[:20]:<20}  {_fmt(pre):>12}  {_fmt(post):>12}")
 
 # FIX: N_SPLITS saved into config so step8 can read it as cfg["n_splits"]
 save = {"config": {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS,
