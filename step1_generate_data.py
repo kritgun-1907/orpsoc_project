@@ -30,10 +30,12 @@ Run with:
 import numpy as np
 import pandas as pd
 import pickle
+import warnings
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.stattools import adfuller, kpss
+from scipy.stats import levene
 import os
 
 os.makedirs("data",    exist_ok=True)
@@ -51,7 +53,7 @@ def generate(
     n_features:      int   = 50,
     n_signal:        int   = 5,
     ar_coef:         float = 0.70,
-    drift_rate:      float = 0.003,
+    drift_rate:      float = 0.0003,
     regime_switch:   int   = 500,
     seed:            int   = 42,
 ):
@@ -131,13 +133,51 @@ def generate(
 #  STATIONARITY TEST
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_stationarity(series: np.ndarray, name: str) -> dict:
-    """Augmented Dickey-Fuller test. p < 0.05 → STATIONARY."""
-    adf_stat, p_value, _, _, critical_values, _ = adfuller(series)
-    is_stationary = p_value < 0.05
+def test_stationarity(series: np.ndarray, name: str,
+                      method: str = "adf",
+                      split_at: int | None = None) -> dict:
+    """
+    Stationarity test.
+
+    method="adf"            : Augmented Dickey-Fuller. Null = unit root.
+                              p < 0.05 → STATIONARY.
+    method="kpss"           : Kwiatkowski-Phillips-Schmidt-Shin (regression="c").
+                              Null = stationary. p < 0.05 → NON-STATIONARY.
+    method="variance_break" : Levene's test for equal variance across two
+                              halves (or around `split_at`).  Null = equal
+                              variance.  p < 0.05 → variance-non-stationary.
+
+    Why three methods:
+      - ADF is the default for mean/unit-root non-stationarity.
+      - KPSS catches mild trends that ADF misses (used for Level 3 drift).
+      - Levene's catches variance regime shifts (used for Level 4): the
+        regime_switch series is mean-zero on both sides, so ADF and KPSS
+        see a stationary series even though the variance jumps from 0.5
+        to 2.0 at t=split_at.  The variance shift IS the non-stationarity,
+        and Levene's is the textbook test for it.
+    """
+    if method == "kpss":
+        # regression="c" tests stationarity around a constant only.
+        # "ct" would first detrend the series, so a trended series would
+        # always report stationary — useless for catching the drift we
+        # intentionally injected at Level 3.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            kpss_stat, p_value, _, _ = kpss(series, regression="c", nlags="auto")
+        is_stationary = p_value >= 0.05
+        label = "KPSS"
+    elif method == "variance_break":
+        cut = split_at if split_at is not None else len(series) // 2
+        stat, p_value = levene(series[:cut], series[cut:], center="median")
+        is_stationary = p_value >= 0.05
+        label = "Levene"
+    else:
+        adf_stat, p_value, _, _, critical_values, _ = adfuller(series)
+        is_stationary = p_value < 0.05
+        label = "ADF"
     status = "STATIONARY" if is_stationary else "NON-STATIONARY"
-    print(f"  {name:<40}  p={p_value:.5f}  →  {status}")
-    return {"p": p_value, "stationary": is_stationary}
+    print(f"  {name:<40}  [{label}] p={p_value:.5f}  →  {status}")
+    return {"p": p_value, "stationary": is_stationary, "method": label}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -168,11 +208,25 @@ for key, name in LEVELS.items():
           f"{n_neg} DOWN ({n_neg/len(y)*100:.1f}%)")
     print()
 
-print("Stationarity Tests (ADF, p < 0.05 = stationary):")
+print("Stationarity Tests:")
+print("  ADF    (p < 0.05 → STATIONARY)      for white_noise, ar1")
+print("  KPSS   (p < 0.05 → NON-STATIONARY)  for drift")
+print("  Levene (p < 0.05 → NON-STATIONARY)  for regime_switch (variance break)")
 print()
+STATIONARITY_METHOD = {
+    "white_noise":   "adf",
+    "ar1":           "adf",
+    "drift":         "kpss",
+    "regime_switch": "variance_break",
+}
 adf_results = {}
 for key, data in datasets.items():
-    r = test_stationarity(data["base"], data["name"])
+    # Pass the known switch point for variance_break so the two halves
+    # align with the actual regime boundary.
+    split_at = 500 if key == "regime_switch" else None
+    r = test_stationarity(data["base"], data["name"],
+                          method=STATIONARITY_METHOD[key],
+                          split_at=split_at)
     adf_results[key] = r
 
 print()

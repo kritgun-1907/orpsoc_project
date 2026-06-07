@@ -301,6 +301,14 @@ class AdaptiveRegimeThreshold:
             if len(window) >= 5:
                 self.threshold = float(np.percentile(window, self.k))
             self.triggered = bool(p_trans > self.threshold)
+            # Mirror the CUSUM post-trigger reset: a confirmed trigger
+            # spike, if left in the lookback, raises the percentile
+            # threshold for subsequent folds and can suppress detection
+            # at exactly the post-switch folds where it matters most.
+            # Drop the spike from history so the next threshold is
+            # computed from the surrounding regime, not the trigger.
+            if self.triggered and self.history:
+                self.history.pop()
 
         elif self.method == "cusum":
             mu_ref = float(np.mean(window[:-1])) if len(window) > 1 else 0.3

@@ -333,8 +333,14 @@ for level_key, level_name in LEVELS.items():
                                    hmm_trigger=triggered,
                                    warm_start_pos=None if triggered else warm_start_fh,
                                    **pso_kw)
-            # Always update warm_start after the fold so fold k+1 can use it
-            warm_start_fh = r4["gbest_pos"]
+            # Warm-start poisoning fix:
+            # On a triggered fold the training window is still mostly
+            # pre-switch, so the gbest is biased toward the OLD regime.
+            # Carrying it forward anchors fold k+1 to the wrong features
+            # (and the adaptive threshold has just adapted upward, so HMM
+            # rarely re-triggers immediately). Drop the warm-start after
+            # any trigger so the next fold restarts orthogonally clean.
+            warm_start_fh = None if triggered else r4["gbest_pos"]
 
             seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
             seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])
