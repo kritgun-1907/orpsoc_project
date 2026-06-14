@@ -327,20 +327,20 @@ for level_key, level_name in LEVELS.items():
                 X_tr, feat_name=feat_names[0],
                 threshold_obj=hmm_threshold
             )
-            # Warm-start: carry gbest from fold k when no regime change.
-            # When triggered: full orthogonal re-init (warm_start ignored inside).
+            # Carry gbest from fold k forward on EVERY fold.
+            #   • No regime change → particle[0] warm-started (continuation).
+            #   • Regime change    → the runner uses the carried gbest only to
+            #     seed a small set of ELITE particles (partial restart /
+            #     population memory), retaining pre-switch knowledge without
+            #     anchoring the whole swarm to the old regime.
+            # p_trans scales the Phase 2 burst intensity (proportional drift
+            # response) instead of a fixed cr_high/w_max on a binary trigger.
             r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
                                    hmm_trigger=triggered,
-                                   warm_start_pos=None if triggered else warm_start_fh,
+                                   warm_start_pos=warm_start_fh,
+                                   p_trans=p_trans,
                                    **pso_kw)
-            # Warm-start poisoning fix:
-            # On a triggered fold the training window is still mostly
-            # pre-switch, so the gbest is biased toward the OLD regime.
-            # Carrying it forward anchors fold k+1 to the wrong features
-            # (and the adaptive threshold has just adapted upward, so HMM
-            # rarely re-triggers immediately). Drop the warm-start after
-            # any trigger so the next fold restarts orthogonally clean.
-            warm_start_fh = None if triggered else r4["gbest_pos"]
+            warm_start_fh = r4["gbest_pos"]
 
             seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
             seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])

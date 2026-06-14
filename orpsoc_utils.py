@@ -532,7 +532,8 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       n_particles=20, max_iter=60, min_f=3, theta=0.7,
                       cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
                       N_explore=15, lam=0.1, hmm_trigger_delay=7,
-                      warm_start_pos=None, **kwargs):
+                      warm_start_pos=None, p_trans=None,
+                      ramp_iters=5, elite_frac=0.2, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
@@ -547,19 +548,34 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         disrupts the early exploration that orthogonal init enables.
 
     warm_start_pos : optional np.ndarray of shape (n_features,)
-      gbest position carried from the previous fold. When provided and
-      hmm_trigger=False, particle[0] is seeded from warm_start_pos so
-      the swarm starts from a known-good solution rather than from scratch.
-      When hmm_trigger=True the warm_start is ignored and a full orthogonal
-      re-initialisation is used — the regime change demands a clean slate.
+      gbest position carried from the previous fold.
+        • hmm_trigger=False → particle[0] is seeded from warm_start_pos so
+          the swarm continues from a known-good solution (continuation).
+        • hmm_trigger=True  → ELITE PRESERVATION / PARTIAL RESTART: instead
+          of discarding everything (the old "clean slate" that caused the
+          blind, destructive reset at the regime change), a fraction
+          (elite_frac) of particles are seeded from the carried gbest and
+          reinjected alongside the fresh orthogonal swarm. Retains useful
+          pre-switch structure while still exploring the new regime.
+
+    p_trans : optional float in [0, 1]
+      HMM transition probability for the current fold. Scales the Phase 2
+      burst intensity (proportional drift response): weak drift → modest
+      increase in cr/w, strong drift → full burst. None → full-strength
+      burst (used by the APSOLL self-trigger condition, which has no HMM).
+
+    ramp_iters : int
+      Number of iterations over which cr/w ramp UP into the Phase 2 burst,
+      replacing the instant cr_low→cr_high jump that shook the whole swarm.
 
     PHASE LOGIC:
       Phase 1 — exploration: cr=cr_low, linear w decay.
         Transitions to Phase 2 when either:
           (a) APSOLL self-trigger: it > 5 and c_t < 1.05 (m reset → stagnation)
           (b) Delayed HMM trigger: hmm_trigger=True and it >= hmm_trigger_delay
-      Phase 2 — exploitation burst: cr=cr_high, w=w_max, GWO leaders.
-        Runs for N_explore iterations, then → Phase 3.
+      Phase 2 — exploitation burst: cr/w ramp from cr_low/w_min up to the
+        drift-proportional targets (cr_target/w_target) over ramp_iters
+        iterations, GWO leaders. Runs for N_explore iterations, then → Phase 3.
       Phase 3 — exponential blend back to standard: smooth decay of
         leader influence toward standard PSO.
 
@@ -603,22 +619,43 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             "best_fit": _eval(pos),
         })
 
-    # Warm-start: seed particle[0] from the previous fold's gbest when there
-    # is no regime change.  When HMM fires, ignore warm_start — the regime
-    # change demands a full orthogonal re-initialisation (the clean slate IS
-    # the mechanism that lets the swarm pivot to new regime features).
-    if warm_start_pos is not None and not hmm_trigger:
-        ws = warm_start_pos.copy()
-        # Enforce min_f constraint on the carried position
-        if ws.sum() < min_f:
-            zeros = np.where(ws == 0)[0]
-            need  = min_f - int(ws.sum())
+    # Warm-start / elite preservation.
+    #   • No regime change (hmm_trigger=False): seed particle[0] from the
+    #     previous fold's gbest — known-good continuation.
+    #   • Regime change (hmm_trigger=True): PARTIAL RESTART / POPULATION
+    #     MEMORY. Rather than discarding all pre-switch knowledge (the old
+    #     "clean slate" that caused the blind, destructive reset at fold 5),
+    #     keep elite_frac of the swarm seeded from the carried gbest and
+    #     reinject them alongside the fresh orthogonal particles. The elites
+    #     retain useful structure; the remaining orthogonal particles, plus
+    #     the Phase 2 burst, explore the new regime.
+    def _enforce_min_f(vec):
+        if vec.sum() < min_f:
+            zeros = np.where(vec == 0)[0]
+            need  = min_f - int(vec.sum())
             if len(zeros) >= need:
-                ws[rng.choice(zeros, size=need, replace=False)] = 1
-        fit_ws = _eval(ws)
-        particles[0]["pos"]      = ws
-        particles[0]["best_pos"] = ws.copy()
-        particles[0]["best_fit"] = fit_ws
+                vec[rng.choice(zeros, size=need, replace=False)] = 1
+        return vec
+
+    if warm_start_pos is not None:
+        ws = _enforce_min_f(warm_start_pos.copy())
+        if not hmm_trigger:
+            particles[0]["pos"]      = ws
+            particles[0]["best_pos"] = ws.copy()
+            particles[0]["best_fit"] = _eval(ws)
+        else:
+            elite_k = max(1, int(round(elite_frac * n_particles)))
+            for i in range(elite_k):
+                if i == 0:
+                    ep = ws.copy()                       # exact elite
+                else:
+                    ep = ws.copy()                       # diversified elite
+                    flip = rng.choice(n, size=max(1, n // 20), replace=False)
+                    ep[flip] = 1 - ep[flip]
+                    ep = _enforce_min_f(ep)
+                particles[i]["pos"]      = ep
+                particles[i]["best_pos"] = ep.copy()
+                particles[i]["best_fit"] = _eval(ep)
 
     gbest_pos = max(particles, key=lambda p: p["best_fit"])["best_pos"].copy()
     gbest_fit = max(p["best_fit"] for p in particles)
@@ -631,6 +668,15 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     dt               = 0
     n_explore_rem    = N_explore
     forced_phase2_at = hmm_trigger_delay if hmm_trigger else None
+
+    # Proportional drift response: scale the Phase 2 burst by the HMM
+    # transition probability p_trans (∈[0,1]) instead of applying a fixed
+    # cr_high/w_max whenever a binary threshold is crossed. Weak drift → modest
+    # burst, strong drift → full burst. p_trans=None (APSOLL self-trigger, no
+    # HMM signal) falls back to a full-strength burst.
+    drift_strength = 1.0 if p_trans is None else float(np.clip(p_trans, 0.0, 1.0))
+    cr_target      = cr_low + (cr_high - cr_low) * drift_strength
+    w_target       = w_min  + (w_max  - w_min)  * drift_strength
 
     for it in range(max_iter):
         c_t = adap_c.update(gbest_fit)
@@ -650,16 +696,21 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                 n_explore_rem = N_explore
 
         elif phase == 2:
-            cr_t = cr_high
-            w_t  = w_max
+            # Gradual ramp INTO the burst over ramp_iters iterations rather
+            # than an instant cr_low→cr_high jump (the instant reset "shook the
+            # whole swarm" and drove the fold-5 transition crash). dt counts
+            # iterations since Phase 2 began (reset to 0 at the 1→2 transition).
+            ramp = min(1.0, (dt + 1) / max(ramp_iters, 1))
+            cr_t = cr_low + (cr_target - cr_low) * ramp
+            w_t  = w_min  + (w_target  - w_min)  * ramp
             n_explore_rem -= 1
             dt += 1
             if n_explore_rem <= 0:
                 phase = 3
 
         elif phase == 3:
-            cr_t = cr_low  + (cr_high - cr_low) * np.exp(-lam * dt)
-            w_t  = w_min   + (w_max   - w_min)  * np.exp(-lam * dt)
+            cr_t = cr_low  + (cr_target - cr_low) * np.exp(-lam * dt)
+            w_t  = w_min   + (w_target  - w_min)  * np.exp(-lam * dt)
             dt  += 1
 
         else:
