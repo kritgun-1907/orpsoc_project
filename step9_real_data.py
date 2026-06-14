@@ -83,7 +83,7 @@ os.makedirs("plots",   exist_ok=True)
 # ══════════════════════════════════════════════════════════════════════════════
 
 PREP_ONLY   = False    # True = only build+save .pkl datasets, skip ablation
-FAST_MODE   = True     # True = quick directional read; False = paper run
+FAST_MODE   = False     # True = quick directional read; False = paper run
 
 N_SEEDS     = 5  if FAST_MODE else 20
 MAX_ITER    = 20 if FAST_MODE else 60
