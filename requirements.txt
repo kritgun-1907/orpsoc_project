@@ -1,0 +1,15 @@
+# OrPSOC Research — Python dependencies
+# Covers all steps (step0–step9), step_real_data.py, and orpsoc_utils.py
+# Tested with Python 3.13
+#
+# Install with:
+#     pip install -r requirements.txt
+
+numpy==2.2.6
+pandas==3.0.1
+scipy==1.17.1
+scikit-learn==1.8.0
+statsmodels==0.14.6
+xgboost==3.2.0
+lightgbm==4.6.0
+matplotlib==3.10.8
