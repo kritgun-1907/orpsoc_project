@@ -3,6 +3,7 @@ orpsoc_utils.py — Shared utilities for the full hybrid pipeline
 ================================================================
 Import this in every step file. Contains:
   - sigmoid / build_orthogonal_positions / partial_reinit
+  - windowed_feature_importance / build_importance_guided_positions
   - crossover / hamming_diversity
   - evaluate()                  with APSOLL-normalized fitness
   - AdaptiveRegimeThreshold     (percentile + CUSUM auto-threshold)
@@ -30,6 +31,12 @@ FIX LOG:
   - CUSUM calibration: AdaptiveRegimeThreshold.calibrate_from_baseline()
     computes slack = 0.5*std(baseline_obs) per Page (1954) instead of
     hardcoding 0.05
+  - IMPORTANCE-GUIDED REINIT (professor suggestion #2): added
+    windowed_feature_importance() + build_importance_guided_positions().
+    run_hybrid_orpsoc() now seeds the NON-elite particles from LightGBM
+    feature importances on the most recent training window when
+    hmm_trigger=True (use_importance_reinit=True by default), replacing the
+    blind orthogonal restart. Elites are still preserved (partial restart).
 """
 
 import numpy as np
@@ -189,6 +196,99 @@ def evaluate(pos: np.ndarray, feat_names: list,
 
     compactness = 1.0 - len(idx) / len(feat_names)
     return float(theta * auc + (1.0 - theta) * compactness)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  IMPORTANCE-GUIDED RE-INITIALISATION  (professor suggestion #2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def windowed_feature_importance(X_tr, y_tr, feat_names,
+                                window_frac: float = 0.4,
+                                seed: int = 42) -> np.ndarray:
+    """
+    Fit a fast LightGBM on the MOST RECENT window of the training data and
+    return a normalised importance vector over features (sums to 1.0).
+
+    WHY (professor suggestion #2)
+    ──────────────────────────────
+    After a regime change, reinitialising the swarm orthogonally / randomly
+    means the fresh particles explore *blindly* in the new regime. Instead,
+    fit the classifier on the most recent training window only, read its
+    feature importances, and use them to bias which features the fresh
+    particles prioritise. This gives the swarm a DATA-DRIVEN starting point
+    for the new regime rather than a blind restart.
+
+    "Most recent window only" = the trailing `window_frac` of X_tr, so the
+    importances reflect the *current* regime, not the averaged history.
+
+    Robustness: falls back to a uniform vector if the model cannot be fit,
+    the window has a single class, or all importances are zero. The uniform
+    fallback reproduces the old orthogonal-style blind behaviour, so callers
+    never crash — they just lose the guidance.
+    """
+    n = len(feat_names)
+    uniform = np.full(n, 1.0 / n)
+    try:
+        cut = max(30, int(len(X_tr) * window_frac))
+        Xw  = X_tr[feat_names].iloc[-cut:]
+        yw  = y_tr.iloc[-cut:]
+        if yw.nunique() < 2:
+            return uniform
+        pipe = Pipeline([
+            ("imp",    SimpleImputer(strategy="mean")),
+            ("scaler", StandardScaler()),
+            ("model",  LGBMClassifier(n_estimators=60, num_leaves=15,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed)),
+        ])
+        pipe.fit(Xw, yw)
+        imp = np.asarray(pipe.named_steps["model"].feature_importances_,
+                         dtype=float)
+        if imp.sum() <= 0 or not np.isfinite(imp).all():
+            return uniform
+        # Laplace-style smoothing: every feature keeps a small floor
+        # probability so no feature is permanently excluded from exploration.
+        imp = imp + imp.sum() * 0.05 / n
+        return imp / imp.sum()
+    except Exception:
+        return uniform
+
+
+def build_importance_guided_positions(n_particles: int, n_features: int,
+                                      prob: np.ndarray,
+                                      min_f: int = 3,
+                                      seed: int = 42) -> np.ndarray:
+    """
+    Build fresh particle positions biased by an importance probability vector.
+
+    Feature j is switched on in each particle with a probability proportional
+    to prob[j] (rescaled so the expected subset size is compact but still
+    exploratory), and every particle is guaranteed at least min_f features.
+
+    This is the importance-guided replacement for build_orthogonal_positions()
+    used for the NON-elite particles during a regime-triggered restart.
+    """
+    rng = np.random.RandomState(seed)
+    prob = np.asarray(prob, dtype=float)
+    if prob.sum() <= 0 or not np.isfinite(prob).all():
+        prob = np.full(n_features, 1.0 / n_features)
+    else:
+        prob = prob / prob.sum()
+
+    # Target expected selection size ≈ one third of the features (compact,
+    # matching the compactness pressure in evaluate()), distributed by prob.
+    target = max(min_f + 1, n_features // 3)
+    p_sel  = np.clip(prob * target, 0.02, 0.98)
+
+    grid = (rng.rand(n_particles, n_features) < p_sel).astype(float)
+    order = np.argsort(prob)[::-1]   # highest-importance features first
+    for i in range(n_particles):
+        if grid[i].sum() < min_f:
+            for j in order:
+                if grid[i].sum() >= min_f:
+                    break
+                grid[i, j] = 1.0
+    return grid
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -533,7 +633,9 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
                       N_explore=15, lam=0.1, hmm_trigger_delay=7,
                       warm_start_pos=None, p_trans=None,
-                      ramp_iters=5, elite_frac=0.2, **kwargs):
+                      ramp_iters=5, elite_frac=0.2,
+                      use_importance_reinit=True,
+                      importance_window_frac=0.4, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
@@ -656,6 +758,33 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                 particles[i]["pos"]      = ep
                 particles[i]["best_pos"] = ep.copy()
                 particles[i]["best_fit"] = _eval(ep)
+
+    # ── IMPORTANCE-GUIDED REINIT of the NON-elite particles ─────────────────
+    # Professor suggestion #2: on a regime-change trigger, seed the fresh
+    # (non-elite) particles from the classifier's feature importances on the
+    # MOST RECENT training window, instead of the blind orthogonal draw they
+    # currently hold. Elites (indices 0..elite_k-1) are left untouched so the
+    # partial-restart / population-memory behaviour is preserved; only the
+    # explore-from-scratch particles get the data-driven guidance.
+    # Applies whenever hmm_trigger is set, with or without a warm start
+    # (e.g. step_real_data calls the full-hybrid condition without warm_start).
+    if hmm_trigger and use_importance_reinit:
+        elite_k = (max(1, int(round(elite_frac * n_particles)))
+                   if warm_start_pos is not None else 0)
+        n_fresh = n_particles - elite_k
+        if n_fresh > 0:
+            prob  = windowed_feature_importance(
+                X_tr, y_tr, feat_names,
+                window_frac=importance_window_frac, seed=seed)
+            fresh = build_importance_guided_positions(
+                n_fresh, n, prob, min_f=min_f, seed=seed + 777)
+            for j in range(n_fresh):
+                idx_p = elite_k + j
+                pos   = _enforce_min_f(fresh[j].copy())
+                particles[idx_p]["pos"]      = pos
+                particles[idx_p]["vel"]      = rng.randn(n) * 0.1
+                particles[idx_p]["best_pos"] = pos.copy()
+                particles[idx_p]["best_fit"] = _eval(pos)
 
     gbest_pos = max(particles, key=lambda p: p["best_fit"])["best_pos"].copy()
     gbest_fit = max(p["best_fit"] for p in particles)

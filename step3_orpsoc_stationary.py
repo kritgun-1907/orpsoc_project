@@ -37,7 +37,11 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier   # CONSISTENCY FIX: was XGBClassifier.
+# PSO fitness in step3 already uses orpsoc_utils.evaluate() (LightGBM); this
+# switches the FINAL-AUC comparison (quick_auc) to the same model so the
+# "OrPSOC vs all-features vs oracle" AUCs are scored on one consistent model.
+# >>> Re-run step3; the three AUC numbers will shift slightly vs the old XGB run.
 import warnings
 warnings.filterwarnings("ignore")
 import os
@@ -264,9 +268,9 @@ def quick_auc(cols, X_tr, y_tr, X_te, y_te):
     pipe = Pipeline([
         ("imp",    SimpleImputer(strategy="mean")),
         ("scaler", StandardScaler()),
-        ("model",  XGBClassifier(
-            n_estimators=80, max_depth=4,
-            learning_rate=0.1, verbosity=0, random_state=42
+        ("model",  LGBMClassifier(
+            n_estimators=100, num_leaves=31,
+            learning_rate=0.1, verbosity=-1, random_state=42
         ))
     ])
     pipe.fit(X_tr[cols], y_tr)

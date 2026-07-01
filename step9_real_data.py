@@ -65,6 +65,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from lightgbm import LGBMClassifier
+from scipy.stats import wilcoxon   # importance-reinit ablation test
 
 from orpsoc_utils import (
     walk_forward_folds, feature_stability_ratio,
@@ -247,12 +248,16 @@ def build_sector_etf_dataset(prices: pd.DataFrame, horizon: int = 5):
 
     X = pd.DataFrame(feats, index=prices.index)
 
-    fwd  = mkt_ret.rolling(horizon).sum().shift(-horizon)   # next-h-day return
-    y    = (fwd > 0).astype(int)
+    # TARGET: "will realized vol exceed its 1-year median?" — directly tests
+    # what the HMM detects (variance breaks) and is genuinely forecastable.
+    rolling_vol = mkt_ret.rolling(20).std()
+    future_vol  = rolling_vol.shift(-horizon)
+    median_vol  = rolling_vol.rolling(252).median()
+    y    = (future_vol > median_vol).astype(int)
     base = mkt_ret
 
-    X, y, base = _align(X, y, base, warmup=60, trim=horizon)
-    return X, y, base
+    X, y, base, dates = _align(X, y, base, warmup=120, trim=horizon)
+    return X, y, base, dates
 
 
 def build_fama_french_dataset(ff: pd.DataFrame, horizon: int = 5):
@@ -281,23 +286,36 @@ def build_fama_french_dataset(ff: pd.DataFrame, horizon: int = 5):
     X = X[["Mkt-RF_lvl"] + [c for c in X.columns if c != "Mkt-RF_lvl"]]
 
     mkt  = ff["Mkt-RF"]
-    fwd  = mkt.rolling(horizon).sum().shift(-horizon)
-    y    = (fwd > 0).astype(int)
+    # TARGET: "will realized vol exceed its 1-year median?" — same logic as
+    # sector_etf; aligns with what the HMM actually detects (variance breaks).
+    rolling_vol = mkt.rolling(20).std()
+    future_vol  = rolling_vol.shift(-horizon)
+    median_vol  = rolling_vol.rolling(252).median()
+    y    = (future_vol > median_vol).astype(int)
     base = mkt
 
-    X, y, base = _align(X, y, base, warmup=60, trim=horizon)
-    return X, y, base
+    X, y, base, dates = _align(X, y, base, warmup=120, trim=horizon)
+    return X, y, base, dates
 
 
 def _align(X, y, base, warmup, trim):
-    """Drop rolling-window warm-up rows and target-trim tail; align indices."""
+    """Drop rolling-window warm-up rows and target-trim tail; align indices.
+    Preserves the original DatetimeIndex as a separate 'dates' Series so
+    break_folds() can map integer fold indices back to calendar dates reliably,
+    even after NaN rows are dropped from the middle of the dataset.
+    """
     X = X.iloc[warmup:-trim] if trim > 0 else X.iloc[warmup:]
     y = y.reindex(X.index)
     base = base.reindex(X.index)
+    # Preserve original date index BEFORE reset so break mapping is accurate.
+    dates = pd.Series(X.index, index=X.index) if hasattr(X.index, 'date') \
+            else pd.Series(X.index)
     keep = y.notna() & np.isfinite(X.to_numpy()).all(axis=1)
-    return X[keep].reset_index(drop=True), \
-           y[keep].astype(int).reset_index(drop=True), \
-           base[keep].reset_index(drop=True)
+    dates_kept = dates[keep].reset_index(drop=True)
+    return (X[keep].reset_index(drop=True),
+            y[keep].astype(int).reset_index(drop=True),
+            base[keep].reset_index(drop=True),
+            dates_kept)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -389,7 +407,8 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:, 1])
-    except Exception:
+    except Exception as e:
+        print(f"  [baseline] fold failed: {e}", flush=True)
         auc = 0.5
     return {"auc": auc, "selected": list(feat_names), "n_sel": len(feat_names)}
 
@@ -399,16 +418,17 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
 # ══════════════════════════════════════════════════════════════════════════════
 
 CONDITIONS = {
-    "baseline":        "Baseline (all features)",
-    "standard_orpsoc": "Standard OrPSOC",
-    "apsoll":          "+APSOLL (no HMM)",
-    "full_hybrid":     "Full Hybrid",
+    "baseline":         "Baseline (all features)",
+    "standard_orpsoc":  "Standard OrPSOC",
+    "apsoll":           "+APSOLL (no HMM)",
+    "full_hybrid":      "Full Hybrid",
+    "full_hybrid_noimp":"Full Hybrid (no imp-reinit)",
 }
 
 
 def run_ablation(X, y, ds_key):
     feat_names = list(X.columns)
-    folds = walk_forward_folds(X, y, n_splits=N_SPLITS, gap=5, min_train=150)
+    folds = walk_forward_folds(X, y, n_splits=N_SPLITS, gap=5, min_train=500)
     level_results = {c: [] for c in CONDITIONS}
 
     for seed in range(N_SEEDS):
@@ -416,6 +436,7 @@ def run_ablation(X, y, ds_key):
         hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
                                                 lookback=50, percentile_k=85.0)
         warm_start_fh = None
+        warm_start_fh_noimp = None      # own chain for the no-imp ablation
 
         for fi, (X_tr, y_tr, X_te, y_te, _) in enumerate(folds):
             if y_te.nunique() < 2:           # skip degenerate test folds
@@ -440,7 +461,19 @@ def run_ablation(X, y, ds_key):
                                    p_trans=p_trans, **pso_kw)
             warm_start_fh = r4["gbest_pos"]
 
-            for c, r in zip(CONDITIONS, (r1, r2, r3, r4)):
+            # Ablation twin: identical but importance-guided reinit OFF.
+            r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                                   hmm_trigger=triggered,
+                                   warm_start_pos=warm_start_fh_noimp,
+                                   p_trans=p_trans,
+                                   use_importance_reinit=False, **pso_kw)
+            warm_start_fh_noimp = r5["gbest_pos"]
+
+            # Log the trigger so we can verify the detector fires near breaks.
+            sr["full_hybrid"].setdefault("fold_triggered", []).append(bool(triggered))
+            sr["full_hybrid"].setdefault("fold_p_trans", []).append(float(p_trans))
+
+            for c, r in zip(CONDITIONS, (r1, r2, r3, r4, r5)):
                 sr[c]["fold_aucs"].append(r["auc"])
                 sr[c]["fold_selected"].append(r["selected"])
 
@@ -472,6 +505,33 @@ def break_folds(folds, X_index_dates, break_dates):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  CHECKPOINT HELPERS  (save/load ablation results per dataset)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _save_checkpoint(key, level_results, folds):
+    """Save ablation results immediately after a dataset finishes."""
+    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v2.pkl"
+    with open(cache, "wb") as f:
+        pickle.dump({"level_results": level_results, "folds": folds}, f)
+    print(f"  [checkpoint] saved → {cache}", flush=True)
+
+
+def _load_checkpoint(key):
+    """
+    Load checkpoint if it exists.
+    Returns (level_results, folds) or None if no checkpoint found.
+    Delete data/checkpoint_<key>.pkl manually to force a fresh rerun.
+    """
+    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v2.pkl"
+    if os.path.exists(cache):
+        with open(cache, "rb") as f:
+            d = pickle.load(f)
+        print(f"  [checkpoint] loaded ← {cache}  (delete to force rerun)", flush=True)
+        return d["level_results"], d["folds"]
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -486,7 +546,8 @@ def fold_auc_curve(level_results, cond):
 def plot_recovery(ds_key, level_results, brk_folds):
     plt.figure(figsize=(9, 5))
     colors = {"baseline": "gray", "standard_orpsoc": "tab:blue",
-              "apsoll": "tab:green", "full_hybrid": "tab:red"}
+              "apsoll": "tab:green", "full_hybrid": "tab:red",
+              "full_hybrid_noimp": "tab:purple"}
     for c in CONDITIONS:
         m, s = fold_auc_curve(level_results, c)
         x = np.arange(1, len(m) + 1)
@@ -516,13 +577,13 @@ def main():
     datasets = {}
     for key, build in builders.items():
         try:
-            X, y, base = build()
+            X, y, base, dates = build()
         except Exception as e:
             print(f"  SKIP {key}: {e}", flush=True)
             continue
         with open(f"data/{key}.pkl", "wb") as f:
             pickle.dump({"X": X, "y": y, "base": base}, f)
-        datasets[key] = (X, y)
+        datasets[key] = (X, y, dates)
         print(f"  {key:12s}  X={X.shape}  y-balance={y.mean():.3f}  "
               f"→ data/{key}.pkl", flush=True)
 
@@ -538,17 +599,18 @@ def main():
                       "max_iter": MAX_ITER, "n_particles": N_PARTICLES,
                       "n_splits": N_SPLITS}, "datasets": {}}
     t0 = time.time()
-    for key, (X, y) in datasets.items():
+    for key, (X, y, dates) in datasets.items():
         print(f"\n── Ablation: {key} ────────────────────────────────────────", flush=True)
-        level_results, folds = run_ablation(X, y, key)
 
-        # Reconstruct a date index for break→fold mapping (raw cache is dated).
-        try:
-            raw = (download_sector_etfs() if key == "sector_etf"
-                   else download_fama_french())
-            dates = pd.Series(raw.index[-len(X):]).reset_index(drop=True)
-        except Exception:
-            dates = pd.Series(pd.RangeIndex(len(X)))
+        # Load from checkpoint if available, otherwise run and save checkpoint.
+        cached = _load_checkpoint(key)
+        if cached is not None:
+            level_results, folds = cached
+        else:
+            level_results, folds = run_ablation(X, y, key)
+            _save_checkpoint(key, level_results, folds)
+
+        # dates comes directly from _align — no post-hoc reconstruction needed.
         brk = break_folds(folds, dates, BREAKS.get(key, []))
 
         summary = {}
@@ -559,12 +621,59 @@ def main():
                 "fold_auc_mean": [float(v) for v in m],
                 "fold_auc_std":  [float(v) for v in s],
                 "mean_jaccard": float(np.mean(
-                    [sr["jaccard"]["mean_jaccard"]
-                     if isinstance(sr["jaccard"], dict) else sr["jaccard"]
-                     for sr in level_results[c]])),
+                    [np.mean(sr["jaccard"]["per_fold_jaccard"])
+                    if isinstance(sr["jaccard"], dict) and sr["jaccard"]["per_fold_jaccard"]
+                    else 1.0
+                    for sr in level_results[c]])),
             }
         out["datasets"][key] = {"break_folds": brk, "conditions": summary}
         plot_recovery(key, level_results, brk)
+
+        # ── Importance-reinit ablation: Full Hybrid vs no-imp twin ───────────
+        def _seed_means(cond):
+            return np.array([np.mean(sr["fold_aucs"]) for sr in level_results[cond]])
+        imp_means   = _seed_means("full_hybrid")
+        noimp_means = _seed_means("full_hybrid_noimp")
+        delta = float(imp_means.mean() - noimp_means.mean())
+        p_val = float("nan")
+        try:
+            if len(imp_means) == len(noimp_means) and np.any(imp_means - noimp_means != 0):
+                _, p_val = wilcoxon(imp_means, noimp_means, alternative="greater")
+        except Exception:
+            pass
+        # Post-break folds only (where imp-reinit is designed to act)
+        def _postbreak_mean(cond):
+            vals = []
+            for sr in level_results[cond]:
+                aucs = sr["fold_aucs"]
+                post = [aucs[i] for i in range(len(aucs))
+                        if any(i >= bf for bf in brk)]
+                if post:
+                    vals.append(np.mean(post))
+            return float(np.mean(vals)) if vals else float("nan")
+        out["datasets"][key]["importance_ablation"] = {
+            "full_hybrid_mean":       float(imp_means.mean()),
+            "full_hybrid_noimp_mean": float(noimp_means.mean()),
+            "delta_auc":              delta,
+            "wilcoxon_p_greater":     float(p_val),
+            "postbreak_full_hybrid":       _postbreak_mean("full_hybrid"),
+            "postbreak_full_hybrid_noimp": _postbreak_mean("full_hybrid_noimp"),
+        }
+        # HMM trigger fire-rate per fold (verify detector fires near breaks)
+        fh = level_results["full_hybrid"]
+        trig = np.array([sr.get("fold_triggered", []) for sr in fh
+                         if sr.get("fold_triggered")], dtype=float)
+        if trig.size:
+            out["datasets"][key]["trigger_fire_rate"] = trig.mean(axis=0).tolist()
+
+        ia = out["datasets"][key]["importance_ablation"]
+        print(f"  [{key}] imp-reinit ablation: FullHybrid={ia['full_hybrid_mean']:.4f}  "
+              f"NoImp={ia['full_hybrid_noimp_mean']:.4f}  Δ={ia['delta_auc']:+.4f}  "
+              f"p={ia['wilcoxon_p_greater']:.4f}", flush=True)
+        if "trigger_fire_rate" in out["datasets"][key]:
+            fr = out["datasets"][key]["trigger_fire_rate"]
+            print(f"  [{key}] break_folds={brk}  trigger fire-rate/fold=" +
+                  " ".join(f"{v:.2f}" for v in fr), flush=True)
 
         print(f"  {key} mean AUC:  " +
               "  ".join(f"{c[:4]}={summary[c]['mean_auc']:.4f}" for c in CONDITIONS),

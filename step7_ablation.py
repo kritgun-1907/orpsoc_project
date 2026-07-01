@@ -35,6 +35,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from lightgbm import LGBMClassifier
+from scipy.stats import wilcoxon   # for the importance-reinit ablation test
 
 from orpsoc_utils import (
     sigmoid, build_orthogonal_positions, partial_reinit,
@@ -142,7 +143,7 @@ class SimpleHMM:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CONDITION 1 — BASELINE (all features, XGBoost)
+#  CONDITION 1 — BASELINE (all features, LightGBM)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
@@ -199,10 +200,11 @@ def get_hmm_trigger(X_train, feat_name="signal_0",
 #      step7's JSON output.  The "+APSOLL" entry would be silently overwritten
 #      in Python dicts anyway, but removing it prevents confusion.
 CONDITIONS = {
-    "baseline":       "Baseline (all features)",
-    "standard_orpsoc":"Standard OrPSOC",
-    "apsoll":         "+APSOLL (no HMM)",
-    "full_hybrid":    "Full Hybrid",
+    "baseline":         "Baseline (all features)",
+    "standard_orpsoc":  "Standard OrPSOC",
+    "apsoll":           "+APSOLL (no HMM)",
+    "full_hybrid":      "Full Hybrid",
+    "full_hybrid_noimp":"Full Hybrid (no imp-reinit)",
 }
 
 ALL_RESULTS = {}
@@ -247,6 +249,9 @@ for level_key, level_name in LEVELS.items():
         # Warm-start position carried from fold k → fold k+1 (Full Hybrid only).
         # Reset to None at the start of each seed so seeds are independent.
         warm_start_fh = None
+        # Separate warm-start chain for the no-importance-reinit ablation so the
+        # two Full-Hybrid variants never contaminate each other's memory.
+        warm_start_fh_noimp = None
 
         for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
             if len(y_te.unique()) < 2:
@@ -353,6 +358,39 @@ for level_key, level_name in LEVELS.items():
                 _r2_hits(r4["selected"]))
             seed_results["full_hybrid"].setdefault("fold_is_pre", []).append(
                 is_pre_switch)
+            # Log the HMM trigger + P(Transition) per fold so we can verify the
+            # detector actually fires at the regime boundary (fold ≈ switch_fold).
+            seed_results["full_hybrid"].setdefault("fold_triggered", []).append(
+                bool(triggered))
+            seed_results["full_hybrid"].setdefault("fold_p_trans", []).append(
+                float(p_trans))
+
+            # ── Condition 5: Full Hybrid WITHOUT importance-guided reinit ──
+            # Identical to Full Hybrid in every respect (same trigger, same
+            # p_trans, same elite partial-restart) EXCEPT the fresh particles
+            # are reinitialised blindly (orthogonal) rather than from recent-
+            # window feature importances. The Full-Hybrid−vs−this delta is the
+            # ISOLATED marginal contribution of importance-guided reinit
+            # (professor suggestion #2). Own warm-start chain (see above).
+            r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                                   hmm_trigger=triggered,
+                                   warm_start_pos=warm_start_fh_noimp,
+                                   p_trans=p_trans,
+                                   use_importance_reinit=False,
+                                   **pso_kw)
+            warm_start_fh_noimp = r5["gbest_pos"]
+
+            seed_results["full_hybrid_noimp"]["fold_aucs"].append(r5["auc"])
+            seed_results["full_hybrid_noimp"]["fold_selected"].append(r5["selected"])
+            seed_results["full_hybrid_noimp"]["runtimes"].append(r5["runtime"])
+            seed_results["full_hybrid_noimp"].setdefault("fold_recall", []).append(
+                _recall(r5["selected"]))
+            seed_results["full_hybrid_noimp"].setdefault("fold_r1_hits", []).append(
+                _r1_hits(r5["selected"]))
+            seed_results["full_hybrid_noimp"].setdefault("fold_r2_hits", []).append(
+                _r2_hits(r5["selected"]))
+            seed_results["full_hybrid_noimp"].setdefault("fold_is_pre", []).append(
+                is_pre_switch)
 
         # Compute Jaccard stability for this seed
         for cond in CONDITIONS:
@@ -387,7 +425,7 @@ for level_key, level_name in LEVELS.items():
 print("\n" + "=" * 65)
 print("  SUMMARY TABLE  (mean AUC ± std across seeds)")
 print("=" * 65)
-header = f"{'Level':<28}" + "".join(f"{'Cond'+str(i+1):>14}" for i in range(4))
+header = f"{'Level':<28}" + "".join(f"{'Cond'+str(i+1):>14}" for i in range(len(CONDITIONS)))
 print(header)
 
 summary = {}
@@ -441,7 +479,7 @@ for level_key, ldata in ALL_RESULTS.items():
 
 print()
 print("  FEATURE RECALL  (fraction of true signal features recovered)")
-print(f"{'Level':<28}" + "".join(f"{'Cond'+str(i+1):>14}" for i in range(4)))
+print(f"{'Level':<28}" + "".join(f"{'Cond'+str(i+1):>14}" for i in range(len(CONDITIONS))))
 for level_key, ldata in ALL_RESULTS.items():
     row = f"{ldata['level_name'][:27]:<28}"
     for cond in CONDITIONS:
@@ -459,11 +497,99 @@ if "regime_switch" in summary:
         def _fmt(v): return "nan" if (isinstance(v, float) and np.isnan(v)) else f"{v:.3f}"
         print(f"  {label[:20]:<20}  {_fmt(pre):>12}  {_fmt(post):>12}")
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  IMPORTANCE-REINIT ABLATION  (Full Hybrid  vs  Full Hybrid without imp-reinit)
+# ══════════════════════════════════════════════════════════════════════════════
+# This is the ISOLATED contribution of professor suggestion #2. Positive delta
+# on regime_switch (especially post-switch) = importance-guided reinit helps.
+
+print()
+print("=" * 65)
+print("  IMPORTANCE-REINIT ABLATION  (Full Hybrid − no-imp variant)")
+print("=" * 65)
+print(f"  {'Level':<20}  {'FullHybrid':>11}  {'NoImpReinit':>11}  "
+      f"{'Δ AUC':>8}  {'Wilcoxon p':>11}")
+importance_ablation = {}
+for level_key in ALL_RESULTS:
+    imp   = np.array(summary[level_key]["full_hybrid"]["seed_aucs"])
+    noimp = np.array(summary[level_key]["full_hybrid_noimp"]["seed_aucs"])
+    delta = float(imp.mean() - noimp.mean())
+    # Paired one-sided Wilcoxon: does imp-reinit BEAT no-imp across seeds?
+    p_val = float("nan")
+    try:
+        if len(imp) == len(noimp) and np.any(imp - noimp != 0):
+            _, p_val = wilcoxon(imp, noimp, alternative="greater")
+    except Exception:
+        pass
+    importance_ablation[level_key] = {
+        "full_hybrid_mean":       float(imp.mean()),
+        "full_hybrid_noimp_mean": float(noimp.mean()),
+        "delta_auc":              delta,
+        "wilcoxon_p_greater":     p_val,
+    }
+    p_str = "nan" if np.isnan(p_val) else f"{p_val:.4f}"
+    print(f"  {LEVELS[level_key][:19]:<20}  {imp.mean():>11.4f}  "
+          f"{noimp.mean():>11.4f}  {delta:>+8.4f}  {p_str:>11}")
+
+# Post-switch-only delta on regime_switch (where imp-reinit is designed to act)
+if "regime_switch" in ALL_RESULTS:
+    def _post_switch_mean(cond):
+        vals = []
+        for sr in ALL_RESULTS["regime_switch"]["conditions"][cond]:
+            aucs   = sr["fold_aucs"]
+            is_pre = sr.get("fold_is_pre", [True] * len(aucs))
+            post   = [a for a, p in zip(aucs, is_pre) if not p]
+            if post:
+                vals.append(np.mean(post))
+        return float(np.mean(vals)) if vals else float("nan")
+    ps_imp   = _post_switch_mean("full_hybrid")
+    ps_noimp = _post_switch_mean("full_hybrid_noimp")
+    print()
+    print(f"  Post-switch folds only (regime_switch):")
+    print(f"    Full Hybrid           : {ps_imp:.4f}")
+    print(f"    Full Hybrid (no imp)  : {ps_noimp:.4f}")
+    print(f"    Δ (imp-reinit effect) : {ps_imp - ps_noimp:+.4f}")
+    importance_ablation["regime_switch_postswitch"] = {
+        "full_hybrid": ps_imp, "full_hybrid_noimp": ps_noimp,
+        "delta": float(ps_imp - ps_noimp),
+    }
+
+# ── HMM trigger readout: did the detector fire, and where? ────────────────────
+print()
+print("=" * 65)
+print("  HMM TRIGGER READOUT  (fold-by-fold, averaged across seeds)")
+print("=" * 65)
+print("  A trigger at/just-after the switch fold = detector working.")
+trigger_log = {}
+for level_key in ALL_RESULTS:
+    fh_seeds = ALL_RESULTS[level_key]["conditions"]["full_hybrid"]
+    trig = np.array([sr.get("fold_triggered", []) for sr in fh_seeds
+                     if sr.get("fold_triggered")], dtype=float)
+    ptr  = np.array([sr.get("fold_p_trans", []) for sr in fh_seeds
+                     if sr.get("fold_p_trans")], dtype=float)
+    if trig.size == 0:
+        continue
+    fire_rate = trig.mean(axis=0).tolist()   # per-fold fraction of seeds firing
+    p_mean    = ptr.mean(axis=0).tolist()
+    trigger_log[level_key] = {"fire_rate_per_fold": fire_rate,
+                              "p_trans_per_fold": p_mean}
+    sw = N_SPLITS // 2
+    marks = "".join("^" if abs(i - sw) <= 1 else " " for i in range(len(fire_rate)))
+    print(f"  {LEVELS[level_key]}")
+    print(f"    fold        : " + " ".join(f"{i+1:>4}" for i in range(len(fire_rate))))
+    print(f"    fire-rate   : " + " ".join(f"{v:>4.2f}" for v in fire_rate))
+    print(f"    P(trans)    : " + " ".join(f"{v:>4.2f}" for v in p_mean))
+    print(f"    near-switch : {'    '.join('')}{marks}   (^ = fold within 1 of switch)")
+
+
 # FIX: N_SPLITS saved into config so step8 can read it as cfg["n_splits"]
 save = {"config": {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS,
                     "max_iter": MAX_ITER, "n_particles": N_PARTICLES,
-                    "n_splits": N_SPLITS},   # ← FIX: was missing
-        "summary": summary}
+                    "n_splits": N_SPLITS},
+        "summary": summary,
+        "importance_ablation": importance_ablation,
+        "trigger_log": trigger_log}
+
 
 # Deep-serialise ALL_RESULTS (convert numpy floats)
 def to_json(obj):

@@ -3,6 +3,18 @@ STEP 6 — APSOLL Adaptive Velocity + Leadership Update
 ======================================================
 Integrates the two APSOLL mechanisms into your OrPSOC engine.
 
+⚠ CANONICAL-ENGINE NOTE
+────────────────────────
+This file contains a STANDALONE, pedagogical implementation of the hybrid
+engine, kept for the step-by-step narrative and the single-run Level-4 plot.
+The PAPER-GRADE engine actually used by step7_ablation.py, step8_results.py
+and step_real_data.py lives in orpsoc_utils.run_hybrid_orpsoc(). That version
+additionally has: elite-preserving partial restart, importance-guided reinit,
+proportional (P-transition-scaled) drift response, and the delayed-HMM trigger.
+This local copy has been patched to share the gradual Phase-2 ramp so it no
+longer contradicts the canonical engine, but for any reported result import
+from orpsoc_utils rather than re-running this file.
+
 WHAT IS NEW VERSUS STEP 3/4:
 ──────────────────────────────
 Step 3/4 used:  fixed c1=2.0, c2=2.0  (same pull strength every iteration)
@@ -119,6 +131,7 @@ def run_hybrid_orpsoc(
     w_max:       float = 0.9,
     N_explore:   int   = 20,
     lam:         float = 0.1,
+    ramp_iters:  int   = 5,
     seed:        int   = 42,
     verbose:     bool  = True,
 ) -> dict:
@@ -191,8 +204,12 @@ def run_hybrid_orpsoc(
                 n_explore_rem = N_explore
 
         elif phase == 2:
-            cr_t = cr_high
-            w_t  = w_max
+            # Gradual ramp INTO the burst over ramp_iters iterations instead of
+            # an instant cr_low->cr_high jump (the instant reset "shook the whole
+            # swarm" and caused the fold-5 transition crash the professor flagged).
+            ramp = min(1.0, (dt + 1) / max(ramp_iters, 1))
+            cr_t = cr_low + (cr_high - cr_low) * ramp
+            w_t  = w_min  + (w_max  - w_min)  * ramp
             n_explore_rem -= 1
             dt += 1
             if n_explore_rem <= 0:

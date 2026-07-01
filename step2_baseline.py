@@ -34,7 +34,12 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier   # CONSISTENCY FIX: was XGBClassifier.
+# The paper pipeline (orpsoc_utils / step7 / step8) scores with LightGBM.
+# step2 is the BASELINE narrative, so it must use the SAME model as step7's
+# baseline (n_estimators=100, num_leaves=31) or baseline AUC is not comparable
+# across tables. >>> RE-RUN step2 after this change; recorded baseline numbers
+# will differ from the old XGBoost run. <
 import warnings
 warnings.filterwarnings("ignore")
 import json
@@ -93,9 +98,9 @@ def walk_forward_cv(
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(
-                n_estimators=80, max_depth=4,
-                learning_rate=0.1, verbosity=0, random_state=42
+            ("model",  LGBMClassifier(
+                n_estimators=100, num_leaves=31,
+                learning_rate=0.1, verbosity=-1, random_state=42
             ))
         ])
         pipe.fit(X_tr, y_tr)

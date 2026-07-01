@@ -3,6 +3,17 @@ STEP 4 — Adaptive Crossover OrPSOC on Regime-Switch Data
 ==========================================================
 This is the core experiment. This is what you email Indu about.
 
+⚠ CANONICAL-ENGINE NOTE
+────────────────────────
+This file is the STANDALONE, pedagogical origin of the three-phase adaptive
+crossover idea, kept for the mechanism plots (cr(t)/w(t) trajectories).
+The PAPER-GRADE engine used for reported results (step7/step8/step_real_data)
+lives in orpsoc_utils.run_hybrid_orpsoc(), which additionally has elite-
+preserving partial restart, importance-guided reinit, and P(Transition)-scaled
+drift response. The AdaptiveCRW.step() logic below has been patched to ramp
+INTO the Phase-2 burst (rather than jumping instantly), so it is consistent
+with the canonical engine — but treat orpsoc_utils as the source of truth.
+
 YOUR FORMULATION (from the screenshot):
 ─────────────────────────────────────────
 Three phases relative to each detected regime change at t_change:
@@ -53,7 +64,11 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier   # CONSISTENCY FIX: was XGBClassifier.
+# NOTE: step4 is the legacy/pedagogical engine (see banner above). Its local
+# evaluate() still uses a FLAT-penalty fitness (auc - penalty*excess), unlike
+# the canonical theta-normalised fitness in orpsoc_utils.evaluate(). Only the
+# model is aligned to LightGBM here; for reported results use orpsoc_utils.
 import warnings
 warnings.filterwarnings("ignore")
 import os
@@ -113,9 +128,9 @@ def evaluate(pos, feat_names, X_tr, y_tr, X_va, y_va, min_f, penalty=0.001):
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  XGBClassifier(
-                n_estimators=80, max_depth=4,
-                learning_rate=0.1, verbosity=0, random_state=42
+            ("model",  LGBMClassifier(
+                n_estimators=80, num_leaves=15,
+                learning_rate=0.1, verbosity=-1, random_state=42
             ))
         ])
         pipe.fit(X_tr[cols], y_tr)
@@ -237,6 +252,7 @@ class AdaptiveCRW:
         w_start   = 0.9,
         w_end     = 0.4,
         max_iter  = 60,
+        ramp_iters = 5,
     ):
         self.cr_low    = cr_low
         self.cr_high   = cr_high
@@ -247,6 +263,7 @@ class AdaptiveCRW:
         self.w_start   = w_start
         self.w_end     = w_end
         self.max_iter  = max_iter
+        self.ramp_iters = ramp_iters
 
         # State
         self.t_change  = None   # iteration when regime change was detected
@@ -288,9 +305,13 @@ class AdaptiveCRW:
         elif self.phase == "transition":
             dt = iteration - self.t_change
             if dt < self.N_explore:
-                # Phase 2: maximum diversity injection
-                cr = self.cr_high
-                w  = self.w_max
+                # Phase 2: ramp UP into the diversity burst over ramp_iters
+                # iterations rather than an instant jump to cr_high/w_max.
+                # The instant jump "shook the whole swarm" and drove the
+                # fold-5 transition crash the professor flagged.
+                ramp = min(1.0, (dt + 1) / max(self.ramp_iters, 1))
+                cr = self.cr_low + (self.cr_high - self.cr_low) * ramp
+                w  = self.w_min  + (self.w_max   - self.w_min)  * ramp
             else:
                 # Phase 3: exponential decay back to baseline
                 self.phase = "adapting"

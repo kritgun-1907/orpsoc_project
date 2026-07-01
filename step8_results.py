@@ -385,11 +385,98 @@ print("Saved: plots/step8_fig4_waterfall_ablation.png")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  FIGURE 5 + TABLE — IMPORTANCE-REINIT ABLATION (Full Hybrid vs no-imp variant)
+# ══════════════════════════════════════════════════════════════════════════════
+# Isolates professor suggestion #2. Requires step7 to have been re-run with the
+# "full_hybrid_noimp" condition. If the loaded JSON predates that, we skip
+# gracefully and tell the user to re-run step7.
+
+_has_noimp = all(
+    "full_hybrid_noimp" in summary.get(lk, {}) and
+    len(summary[lk]["full_hybrid_noimp"].get("seed_aucs", [])) > 0
+    for lk in LEVEL_KEYS
+)
+
+print()
+print("=" * 65)
+print("  IMPORTANCE-REINIT ABLATION  (Full Hybrid − no-imp variant)")
+print("=" * 65)
+
+importance_ablation_out = {}
+if not _has_noimp:
+    print("  [skip] 'full_hybrid_noimp' not found in step7 results.")
+    print("         Re-run the UPDATED step7_ablation.py to populate this,")
+    print("         then re-run step8 to see the importance-reinit contribution.")
+else:
+    # Prefer step7's precomputed table if present; else compute here.
+    precomputed = data.get("importance_ablation", {})
+    print(f"  {'Level':<20}  {'FullHybrid':>11}  {'NoImpReinit':>11}  "
+          f"{'Δ AUC':>8}  {'Wilcoxon p':>11}")
+    for lk, ll in zip(LEVEL_KEYS, LEVEL_LABELS):
+        imp   = get_seed_aucs(lk, "full_hybrid")
+        noimp = get_seed_aucs(lk, "full_hybrid_noimp")
+        delta = float(imp.mean() - noimp.mean())
+        p_val = float("nan")
+        try:
+            if len(imp) == len(noimp) and np.any(imp - noimp != 0):
+                _, p_val = stats.wilcoxon(imp, noimp, alternative="greater")
+        except Exception:
+            pass
+        importance_ablation_out[lk] = {
+            "full_hybrid_mean": float(imp.mean()),
+            "full_hybrid_noimp_mean": float(noimp.mean()),
+            "delta_auc": delta, "wilcoxon_p_greater": float(p_val),
+        }
+        p_str = "nan" if np.isnan(p_val) else f"{p_val:.4f}"
+        print(f"  {ll:<20}  {imp.mean():>11.4f}  {noimp.mean():>11.4f}  "
+              f"{delta:>+8.4f}  {p_str:>11}")
+
+    # Figure 5: L4 per-fold recovery — the two variants vs baseline.
+    fig, ax = plt.subplots(figsize=(11, 5.5))
+    series = [("baseline", "Baseline (all feats)", "#78909C"),
+              ("full_hybrid_noimp", "Full Hybrid (no imp-reinit)", "#AB47BC"),
+              ("full_hybrid", "Full Hybrid (imp-reinit)", "#EF5350")]
+    for ck, cl, col in series:
+        m, s = get_fold_aucs_mean("regime_switch", ck)
+        if len(m) == 0:
+            continue
+        x = np.arange(1, len(m) + 1)
+        ax.plot(x, m, "-o", color=col, linewidth=2, markersize=6, label=cl)
+        ax.fill_between(x, m - s, m + s, color=col, alpha=0.12)
+    sw = cfg.get("n_splits", 8) // 2
+    ax.axvline(sw + 0.5, color="red", ls="--", alpha=0.7,
+               label=f"Regime switch ≈ fold {sw}")
+    ax.axhline(0.5, color="k", ls=":", alpha=0.4)
+    ax.set_xlabel("Walk-Forward Fold (chronological →)", fontsize=10)
+    ax.set_ylabel("AUC-ROC (mean ± std across seeds)", fontsize=10)
+    ax.set_title("Figure 5 — Importance-Reinit Ablation on Level 4 (Regime Switch)\n"
+                 "Gap between purple and red at post-switch folds = imp-reinit effect",
+                 fontsize=11, fontweight="bold")
+    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("plots/step8_fig5_importance_reinit.png", dpi=150, bbox_inches="tight")
+    print("  Saved: plots/step8_fig5_importance_reinit.png")
+
+# ── HMM trigger readout (from step7 trigger_log, if present) ──────────────────
+trig_log = data.get("trigger_log", {})
+if trig_log:
+    print()
+    print("  HMM TRIGGER FIRE-RATE per fold (1.0 = fired every seed):")
+    for lk in LEVEL_KEYS:
+        if lk not in trig_log:
+            continue
+        fr = trig_log[lk].get("fire_rate_per_fold", [])
+        print(f"    {lk:<15} " + " ".join(f"{v:>4.2f}" for v in fr))
+    print("    ^ On regime_switch, expect fire-rate to spike near the middle fold.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SAVE STATISTICAL SUMMARY JSON
 # ══════════════════════════════════════════════════════════════════════════════
 
 stat_summary = {
     "wilcoxon":  wilcoxon_results,
+    "importance_ablation": importance_ablation_out,
     "auc_summary": {
         lk: {
             ck: {

@@ -13,3 +13,9 @@ statsmodels==0.14.6
 xgboost==3.2.0
 lightgbm==4.6.0
 matplotlib==3.10.8
+
+# Real-data validation (step_real_data.py) — REQUIRED for that script,
+# which raises SystemExit on import if yfinance is missing. Left unpinned
+# because yfinance releases frequently and pinning it against the numpy/
+# pandas versions above is brittle; install the latest compatible build.
+yfinance
