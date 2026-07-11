@@ -89,16 +89,28 @@ class SimpleHMM:
         probs = np.zeros((len(x), 2))
         for k in range(2):
             diff = x - self.mu[k]
-            probs[:, k] = (np.exp(-0.5 * (diff / (self.sigma[k] + eps)) ** 2)
-                           / (self.sigma[k] + eps + np.sqrt(2 * np.pi)))
+            sig  = self.sigma[k] + eps
+            # BUGFIX: identical fix + full rationale as step9_real_data.py's
+            # SimpleHMM._emission_prob(). Was "/(sig + sqrt(2*pi))" (additive,
+            # wrong); correct Gaussian normalizer is "sig * sqrt(2*pi)". This
+            # was the dominant cause of P(Transition) sticking near 1.0
+            # permanently once any crisis entered the training window.
+            probs[:, k] = np.exp(-0.5 * (diff / sig) ** 2) / (sig * np.sqrt(2 * np.pi))
         return np.clip(probs, 1e-300, None)
 
     def fit(self, x):
         T  = len(x)
         sx = np.sort(x)
         mid = len(sx) // 2
+        # BUGFIX: see identical fix + full rationale in step9_real_data.py's
+        # SimpleHMM.fit(). Short version: a bare "+1e-4" floor is negligible
+        # against real data scale and lets the low-vol state's sigma collapse,
+        # saturating P(Transition) near 1.0 permanently. Floor at 10% of the
+        # series' own std instead.
+        sigma_floor = max(1e-4, 0.1 * float(np.std(x)))
         self.mu    = np.array([np.mean(sx[:mid]), np.mean(sx[mid:])])
-        self.sigma = np.array([np.std(sx[:mid]) + 1e-4, np.std(sx[mid:]) + 1e-4])
+        self.sigma = np.maximum(
+            np.array([np.std(sx[:mid]), np.std(sx[mid:])]), sigma_floor)
         self.pi    = np.array([0.7, 0.3])
         self.A     = np.array([[0.95, 0.05], [0.10, 0.90]])
         log_lik_prev = -np.inf
@@ -122,8 +134,9 @@ class SimpleHMM:
             self.pi    = gamma[0]
             self.A     = xi.sum(0) / (xi.sum(0).sum(1, keepdims=True) + 1e-300)
             self.mu    = (gamma * x[:,None]).sum(0) / (gamma.sum(0) + 1e-300)
-            self.sigma = np.sqrt((gamma * (x[:,None] - self.mu)**2).sum(0)
-                                 / (gamma.sum(0) + 1e-300)) + 1e-4
+            self.sigma = np.maximum(
+                np.sqrt((gamma * (x[:,None] - self.mu)**2).sum(0)
+                       / (gamma.sum(0) + 1e-300)), sigma_floor)
             log_lik = np.sum(np.log(scale + 1e-300))
             if abs(log_lik - log_lik_prev) < self.tol: break
             log_lik_prev = log_lik
@@ -170,26 +183,38 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
 def get_hmm_trigger(X_train, feat_name="signal_0",
                     rolling_window=20,
                     percentile_k=85.0,
-                    threshold_obj=None):
+                    threshold_obj=None,
+                    warmup_min_obs=150):
     """
     Fit HMM on training window, get P(Trans), check threshold.
-    Returns (triggered: bool, p_trans: float).
+    Returns (triggered: bool, p_trans: float, is_warmup: bool).
 
     FIX: .bfill() replaces deprecated fillna(method="bfill")
+
+    BUGFIX (warm-start problem): see identical fix + full rationale in
+    step9_real_data.py's get_hmm_trigger(). Short version: too little
+    training data makes the HMM's state separation unreliable and can
+    produce a falsely-confident p_trans, which then fires, consumes the
+    cooldown, and can mask detection at the actual first real break. Below
+    `warmup_min_obs` valid observations, p_trans is computed for diagnostics
+    but the detector is not allowed to act on it.
     """
     obs = pd.Series(X_train[feat_name].values).rolling(rolling_window).std()
     obs = obs.bfill().values   # FIX: was fillna(method="bfill")
     if len(obs) < 30:
-        return False, 0.0
+        return False, 0.0, True
+    is_warmup = len(obs) < warmup_min_obs
     hmm = SimpleHMM(n_iter=30, tol=1e-3)
     try:
         hmm.fit(obs)
         gamma = hmm.predict_proba(obs)
         p_trans = float(gamma[-1, 1])
     except Exception:
-        return False, 0.0
+        return False, 0.0, is_warmup
+    if is_warmup:
+        return False, p_trans, True   # diagnostic only -- not acted on
     triggered = threshold_obj.update(p_trans) if threshold_obj else (p_trans > 0.5)
-    return triggered, p_trans
+    return triggered, p_trans, False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -328,7 +353,7 @@ for level_key, level_name in LEVELS.items():
                 is_pre_switch)
 
             # ── Condition 4: Full Hybrid (HMM trigger + warm-start) ────────
-            triggered, p_trans = get_hmm_trigger(
+            triggered, p_trans, is_warmup = get_hmm_trigger(
                 X_tr, feat_name=feat_names[0],
                 threshold_obj=hmm_threshold
             )
@@ -358,12 +383,22 @@ for level_key, level_name in LEVELS.items():
                 _r2_hits(r4["selected"]))
             seed_results["full_hybrid"].setdefault("fold_is_pre", []).append(
                 is_pre_switch)
-            # Log the HMM trigger + P(Transition) per fold so we can verify the
-            # detector actually fires at the regime boundary (fold ≈ switch_fold).
+            # Log the FULL diagnostic picture, not just the gated boolean:
+            # raw_fire = did the underlying signal cross the bar BEFORE
+            # cooldown/warmup gating (None during warmup); is_warmup = was
+            # this fold too early in the walk-forward sequence to trust the
+            # detector at all. Without these, "triggered=False" is ambiguous
+            # between "no signal" and "signal present but suppressed".
+            raw_fire = (None if is_warmup else
+                       bool(getattr(hmm_threshold, "last_raw_fire", False)))
             seed_results["full_hybrid"].setdefault("fold_triggered", []).append(
                 bool(triggered))
             seed_results["full_hybrid"].setdefault("fold_p_trans", []).append(
                 float(p_trans))
+            seed_results["full_hybrid"].setdefault("fold_raw_fire", []).append(
+                raw_fire)
+            seed_results["full_hybrid"].setdefault("fold_is_warmup", []).append(
+                bool(is_warmup))
 
             # ── Condition 5: Full Hybrid WITHOUT importance-guided reinit ──
             # Identical to Full Hybrid in every respect (same trigger, same
@@ -557,7 +592,8 @@ if "regime_switch" in ALL_RESULTS:
 # ── HMM trigger readout: did the detector fire, and where? ────────────────────
 print()
 print("=" * 65)
-print("  HMM TRIGGER READOUT  (fold-by-fold, averaged across seeds)")
+print("  HMM TRIGGER READOUT  (fold-by-fold; p_trans/raw_fire/warmup are")
+print("  seed-invariant -- pure function of the data -- so seed 0 is shown)")
 print("=" * 65)
 print("  A trigger at/just-after the switch fold = detector working.")
 trigger_log = {}
@@ -565,21 +601,30 @@ for level_key in ALL_RESULTS:
     fh_seeds = ALL_RESULTS[level_key]["conditions"]["full_hybrid"]
     trig = np.array([sr.get("fold_triggered", []) for sr in fh_seeds
                      if sr.get("fold_triggered")], dtype=float)
-    ptr  = np.array([sr.get("fold_p_trans", []) for sr in fh_seeds
-                     if sr.get("fold_p_trans")], dtype=float)
     if trig.size == 0:
         continue
     fire_rate = trig.mean(axis=0).tolist()   # per-fold fraction of seeds firing
-    p_mean    = ptr.mean(axis=0).tolist()
+    s0        = fh_seeds[0]
+    p_arr     = s0.get("fold_p_trans", [])
+    raw_arr   = s0.get("fold_raw_fire", [None] * len(p_arr))
+    warm_arr  = s0.get("fold_is_warmup", [False] * len(p_arr))
     trigger_log[level_key] = {"fire_rate_per_fold": fire_rate,
-                              "p_trans_per_fold": p_mean}
+                              "p_trans_per_fold": p_arr,
+                              "raw_fire_per_fold": raw_arr,
+                              "is_warmup_per_fold": warm_arr}
     sw = N_SPLITS // 2
     marks = "".join("^" if abs(i - sw) <= 1 else " " for i in range(len(fire_rate)))
+    def _fmt_raw(v, w):
+        if w: return "  W"
+        return "  1" if v else "  0"
     print(f"  {LEVELS[level_key]}")
     print(f"    fold        : " + " ".join(f"{i+1:>4}" for i in range(len(fire_rate))))
-    print(f"    fire-rate   : " + " ".join(f"{v:>4.2f}" for v in fire_rate))
-    print(f"    P(trans)    : " + " ".join(f"{v:>4.2f}" for v in p_mean))
+    print(f"    p_trans     : " + " ".join(f"{v:>4.2f}" for v in p_arr))
+    print(f"    raw_fire    : " + " ".join(f"{_fmt_raw(v,w):>4}" for v, w in zip(raw_arr, warm_arr)))
+    print(f"    final trig  : " + " ".join(f"{v:>4.2f}" for v in fire_rate))
     print(f"    near-switch : {'    '.join('')}{marks}   (^ = fold within 1 of switch)")
+    print(f"    (W = warm-up, not enough training data yet -- not evaluated, "
+          f"not the same as 'no signal')")
 
 
 # FIX: N_SPLITS saved into config so step8 can read it as cfg["n_splits"]

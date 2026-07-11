@@ -332,14 +332,38 @@ class SimpleHMM:
         probs = np.zeros((len(x), 2))
         for k in range(2):
             diff = x - self.mu[k]
-            probs[:, k] = (np.exp(-0.5 * (diff / (self.sigma[k] + eps)) ** 2)
-                           / (self.sigma[k] + eps + np.sqrt(2 * np.pi)))
+            sig = self.sigma[k] + eps
+            # BUGFIX: this was "/ (sig + sqrt(2*pi))" -- an ADDITIVE constant,
+            # not the correct Gaussian normalizer "sig * sqrt(2*pi)". For a
+            # small sig (a tight, confident state), sqrt(2*pi)~2.51 dominates
+            # the sum and the denominator barely changes with sig, which
+            # suppresses the whole reason a tight-fitting state should be far
+            # more informative than a fat one for points near its mean. This
+            # was the DOMINANT cause of P(Transition) sticking at ~1.0
+            # forever once any crisis entered the training window -- the
+            # emission evidence for "we're back to quiet" was never strong
+            # enough to overcome the transition-matrix prior. Confirmed by
+            # direct test: same data, this one-symbol fix took P(Trans) from
+            # "stuck at 1.0 on every post-crisis fold" to correctly reading
+            # ~0.0 after each crisis ends and ~1.0 while inside one.
+            probs[:, k] = np.exp(-0.5 * (diff / sig) ** 2) / (sig * np.sqrt(2 * np.pi))
         return np.clip(probs, 1e-300, None)
 
     def fit(self, x):
         T = len(x); sx = np.sort(x); mid = len(sx) // 2
+        # BUGFIX: a bare "+1e-4" additive floor is negligible against real
+        # rolling-volatility scale, so the low-vol state's sigma can collapse
+        # toward zero on a quiet historical stretch. Once that happens, any
+        # later moderately-elevated volatility sits many std-devs from the
+        # low state and the posterior saturates to ~1.0 for the rest of the
+        # series -- confirmed on real data: trigger fire-rate was 1.0 on 7-8
+        # of 8 folds on both real datasets. Floor sigma at 10% of the SERIES'
+        # OWN std instead of an absolute constant, so it can't collapse below
+        # a meaningful fraction of the data's actual scale.
+        sigma_floor = max(1e-4, 0.1 * float(np.std(x)))
         self.mu    = np.array([np.mean(sx[:mid]), np.mean(sx[mid:])])
-        self.sigma = np.array([np.std(sx[:mid]) + 1e-4, np.std(sx[mid:]) + 1e-4])
+        self.sigma = np.maximum(
+            np.array([np.std(sx[:mid]), np.std(sx[mid:])]), sigma_floor)
         self.pi    = np.array([0.7, 0.3])
         self.A     = np.array([[0.95, 0.05], [0.10, 0.90]])
         ll_prev = -np.inf
@@ -361,8 +385,9 @@ class SimpleHMM:
             self.pi = gamma[0]
             self.A  = xi.sum(0) / (xi.sum(0).sum(1, keepdims=True) + 1e-300)
             self.mu = (gamma * x[:, None]).sum(0) / (gamma.sum(0) + 1e-300)
-            self.sigma = np.sqrt((gamma * (x[:, None] - self.mu) ** 2).sum(0)
-                                 / (gamma.sum(0) + 1e-300)) + 1e-4
+            self.sigma = np.maximum(
+                np.sqrt((gamma * (x[:, None] - self.mu) ** 2).sum(0)
+                       / (gamma.sum(0) + 1e-300)), sigma_floor)
             ll = np.sum(np.log(sc + 1e-300))
             if abs(ll - ll_prev) < self.tol:
                 break
@@ -381,18 +406,38 @@ class SimpleHMM:
         return g
 
 
-def get_hmm_trigger(X_train, feat_name, rolling_window=20, threshold_obj=None):
-    """Fit HMM on the rolling volatility of feat_name; return (triggered, p_trans)."""
+def get_hmm_trigger(X_train, feat_name, rolling_window=20, threshold_obj=None,
+                    warmup_min_obs=150):
+    """
+    Fit HMM on the rolling volatility of feat_name; return
+    (triggered: bool, p_trans: float, is_warmup: bool).
+
+    BUGFIX (warm-start problem): with too little training data, a 2-state
+    HMM can't separate states reliably and produces an unstable, sometimes
+    falsely-confident p_trans -- confirmed directly: ~300 quiet observations
+    with ZERO actual regime change produced p_trans=0.76, borderline enough
+    to spuriously trigger. On a real run this showed up as fold 1 (the
+    smallest training window) firing when it shouldn't have, which then
+    ate the cooldown budget and masked detection at the REAL first break.
+    Fix: don't let the detector act at all below `warmup_min_obs` valid
+    rolling-vol observations. p_trans is still computed and returned for
+    diagnostics, but `threshold_obj.update()` is not called during warmup,
+    so an unreliable fold-1 reading can never consume cooldown or pollute
+    the percentile threshold's history.
+    """
     obs = pd.Series(X_train[feat_name].values).rolling(rolling_window).std().bfill().values
     if len(obs) < 30 or np.isnan(obs).any():
-        return False, 0.0
+        return False, 0.0, True
+    is_warmup = len(obs) < warmup_min_obs
     try:
         hmm = SimpleHMM(n_iter=30, tol=1e-3).fit(obs)
         p_trans = float(hmm.predict_proba(obs)[-1, 1])
     except Exception:
-        return False, 0.0
+        return False, 0.0, is_warmup
+    if is_warmup:
+        return False, p_trans, True   # diagnostic only -- not acted on
     triggered = threshold_obj.update(p_trans) if threshold_obj else (p_trans > 0.5)
-    return triggered, p_trans
+    return triggered, p_trans, False
 
 
 def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
@@ -453,7 +498,7 @@ def run_ablation(X, y, ds_key):
             r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
                                    hmm_trigger=False, **pso_kw)
 
-            triggered, p_trans = get_hmm_trigger(
+            triggered, p_trans, is_warmup = get_hmm_trigger(
                 X_tr, feat_name=feat_names[0], threshold_obj=hmm_threshold)
             r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
                                    hmm_trigger=triggered,
@@ -469,9 +514,19 @@ def run_ablation(X, y, ds_key):
                                    use_importance_reinit=False, **pso_kw)
             warm_start_fh_noimp = r5["gbest_pos"]
 
-            # Log the trigger so we can verify the detector fires near breaks.
+            # Log the FULL diagnostic picture, not just the gated boolean:
+            # raw_fire = did the underlying signal cross the bar BEFORE
+            # cooldown/warmup gating (None during warmup, since it was never
+            # evaluated); is_warmup = was this fold too early to trust at all.
+            # Without these, "triggered=False" is ambiguous between "no
+            # signal" and "signal present but suppressed" -- exactly the
+            # ambiguity that made the previous run impossible to diagnose.
+            raw_fire = (None if is_warmup else
+                       bool(getattr(hmm_threshold, "last_raw_fire", False)))
             sr["full_hybrid"].setdefault("fold_triggered", []).append(bool(triggered))
             sr["full_hybrid"].setdefault("fold_p_trans", []).append(float(p_trans))
+            sr["full_hybrid"].setdefault("fold_raw_fire", []).append(raw_fire)
+            sr["full_hybrid"].setdefault("fold_is_warmup", []).append(bool(is_warmup))
 
             for c, r in zip(CONDITIONS, (r1, r2, r3, r4, r5)):
                 sr[c]["fold_aucs"].append(r["auc"])
@@ -510,7 +565,7 @@ def break_folds(folds, X_index_dates, break_dates):
 
 def _save_checkpoint(key, level_results, folds):
     """Save ablation results immediately after a dataset finishes."""
-    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v2.pkl"
+    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v3.pkl"
     with open(cache, "wb") as f:
         pickle.dump({"level_results": level_results, "folds": folds}, f)
     print(f"  [checkpoint] saved → {cache}", flush=True)
@@ -522,7 +577,7 @@ def _load_checkpoint(key):
     Returns (level_results, folds) or None if no checkpoint found.
     Delete data/checkpoint_<key>.pkl manually to force a fresh rerun.
     """
-    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v2.pkl"
+    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v3.pkl"
     if os.path.exists(cache):
         with open(cache, "rb") as f:
             d = pickle.load(f)
@@ -659,21 +714,40 @@ def main():
             "postbreak_full_hybrid":       _postbreak_mean("full_hybrid"),
             "postbreak_full_hybrid_noimp": _postbreak_mean("full_hybrid_noimp"),
         }
-        # HMM trigger fire-rate per fold (verify detector fires near breaks)
+        # HMM trigger diagnostics per fold. p_trans/raw_fire/is_warmup do NOT
+        # depend on the PSO seed (they're a pure function of X_train), so
+        # take seed 0's arrays directly rather than averaging -- averaging
+        # a list containing None (warmup folds) doesn't work anyway, and
+        # averaging would hide exactly the ambiguity we're trying to remove.
         fh = level_results["full_hybrid"]
-        trig = np.array([sr.get("fold_triggered", []) for sr in fh
-                         if sr.get("fold_triggered")], dtype=float)
-        if trig.size:
-            out["datasets"][key]["trigger_fire_rate"] = trig.mean(axis=0).tolist()
+        s0 = fh[0] if fh else {}
+        p_trans_arr  = s0.get("fold_p_trans", [])
+        raw_fire_arr = s0.get("fold_raw_fire", [])
+        warmup_arr   = s0.get("fold_is_warmup", [])
+        trig_arr     = s0.get("fold_triggered", [])
+        if trig_arr:
+            out["datasets"][key]["trigger_fire_rate"] = [float(v) for v in trig_arr]
+            out["datasets"][key]["trigger_p_trans"]   = [float(v) for v in p_trans_arr]
+            out["datasets"][key]["trigger_raw_fire"]  = raw_fire_arr
+            out["datasets"][key]["trigger_is_warmup"] = warmup_arr
 
         ia = out["datasets"][key]["importance_ablation"]
         print(f"  [{key}] imp-reinit ablation: FullHybrid={ia['full_hybrid_mean']:.4f}  "
               f"NoImp={ia['full_hybrid_noimp_mean']:.4f}  Δ={ia['delta_auc']:+.4f}  "
               f"p={ia['wilcoxon_p_greater']:.4f}", flush=True)
-        if "trigger_fire_rate" in out["datasets"][key]:
-            fr = out["datasets"][key]["trigger_fire_rate"]
-            print(f"  [{key}] break_folds={brk}  trigger fire-rate/fold=" +
-                  " ".join(f"{v:.2f}" for v in fr), flush=True)
+        if trig_arr:
+            def _fmt_raw(v, w):
+                if w: return "  W"    # warm-up: not evaluated at all
+                return "  1" if v else "  0"
+            print(f"  [{key}] break_folds={brk}", flush=True)
+            print(f"    fold      : " + " ".join(f"{i+1:>4}" for i in range(len(trig_arr))), flush=True)
+            print(f"    p_trans   : " + " ".join(f"{v:>4.2f}" for v in p_trans_arr), flush=True)
+            print(f"    raw_fire  : " + " ".join(f"{_fmt_raw(v,w):>4}" for v, w in
+                                                  zip(raw_fire_arr, warmup_arr)), flush=True)
+            print(f"    final trig: " + " ".join(f"{'  1' if v else '  0':>4}" for v in trig_arr), flush=True)
+            print(f"    (W = warm-up fold, not enough training data to trust the "
+                  f"detector -- not evaluated, not counted as no-signal)", flush=True)
+
 
         print(f"  {key} mean AUC:  " +
               "  ".join(f"{c[:4]}={summary[c]['mean_auc']:.4f}" for c in CONDITIONS),

@@ -37,6 +37,22 @@ FIX LOG:
     feature importances on the most recent training window when
     hmm_trigger=True (use_importance_reinit=True by default), replacing the
     blind orthogonal restart. Elites are still preserved (partial restart).
+  - ALWAYS-ON TRIGGER BUGFIX (found on real-data run: fire-rate was 1.0 on
+    7-8 of 8 folds on both sector_etf and fama_french):
+      (a) AdaptiveRegimeThreshold.update() used to .pop() the triggering
+          observation out of its own history, so a chronically-elevated
+          P(Transition) signal could never inform (raise) the percentile
+          threshold -- guaranteeing every future high reading re-triggers.
+          Fixed: history is never discarded; a `cooldown` counter (default
+          2) now suppresses re-triggering after a confirmed detection
+          instead. Also added consecutive-raw-trigger tracking with a
+          console WARNING if it hits 4, so this class of bug is caught in
+          a 2-minute FAST_MODE run instead of after a 16-hour FULL run.
+      (b) SimpleHMM (in step7_ablation.py / step9_real_data.py, not this
+          file) floored sigma at a bare "+1e-4", negligible against real
+          volatility scale, letting the low-vol state's sigma collapse and
+          P(Transition) saturate to ~1.0 permanently. See the fix in those
+          files: sigma floor is now 10% of the series' own std.
 """
 
 import numpy as np
@@ -358,17 +374,23 @@ class AdaptiveRegimeThreshold:
                  lookback: int = 50,
                  percentile_k: float = 75.0,
                  cusum_slack: float = 0.1,
-                 cusum_h: float = 5.0):
+                 cusum_h: float = 5.0,
+                 cooldown: int = 2):
         self.method       = method
         self.lookback     = lookback
         self.k            = percentile_k
         self.slack        = cusum_slack
         self.h            = cusum_h
+        self.cooldown     = cooldown   # BUGFIX: see update() below
         self.history      = []
         self.cusum_S      = 0.0
         self.triggered    = False
         self.threshold    = 0.5
         self.trigger_log  = []   # (iteration, p_trans, threshold) tuples
+        self._cooldown_remaining        = 0
+        self.consecutive_raw_triggers   = 0
+        self.max_consecutive_raw_triggers = 0
+        self.last_raw_fire              = False
 
     def calibrate_from_baseline(self, baseline_observations: list) -> float:
         """
@@ -393,34 +415,91 @@ class AdaptiveRegimeThreshold:
         """
         Feed one observation. Returns True if regime change detected.
         Call once per walk-forward fold with P(Trans|t) from the HMM.
+
+        BUGFIX (this method used to pop() the triggering observation out of
+        history right after it fired, on the theory that a confirmed spike
+        would otherwise raise the percentile bar and suppress detection on
+        the very folds that matter. In practice, if P(Trans) is CHRONICALLY
+        elevated -- which real financial rolling-volatility data produces --
+        every single fold triggers, every single trigger gets deleted before
+        it can inform the threshold, and the threshold never rises to match
+        reality. This is a self-reinforcing "always on" loop, confirmed on
+        both real datasets (fire-rate = 1.0 on 7-8 of 8 folds). The fix:
+        NEVER discard real observations. Use a cooldown counter instead --
+        after a confirmed trigger, suppress RE-triggering for `cooldown`
+        subsequent calls so the swarm gets a chance to actually run in the
+        new regime, while the threshold keeps calibrating against the true,
+        BUGFIX 2 (self-referential threshold): the percentile branch used to
+        compute the threshold from a window that INCLUDED the observation
+        being judged against it -- i.e. p_trans was partly compared to
+        itself. Confirmed directly on a real fold: p_trans=0.9999764 failed
+        to fire because the self-inclusive 85th-percentile threshold worked
+        out to 0.9999823 -- a margin of 0.0000059, smaller than floating-
+        point noise, deciding whether a real detection counted. Excluding
+        the current point from its own comparison window (judge each new
+        reading against PRIOR history only, which is what the CUSUM branch
+        below already did correctly) fixed it: same data, threshold drops
+        to 0.9999538, and the same reading now correctly fires.
         """
+        prior_window = self.history[-self.lookback:]   # BEFORE appending
         self.history.append(p_trans)
         window = self.history[-self.lookback:]
 
         if self.method == "percentile":
-            if len(window) >= 5:
-                self.threshold = float(np.percentile(window, self.k))
-            self.triggered = bool(p_trans > self.threshold)
-            # Mirror the CUSUM post-trigger reset: a confirmed trigger
-            # spike, if left in the lookback, raises the percentile
-            # threshold for subsequent folds and can suppress detection
-            # at exactly the post-switch folds where it matters most.
-            # Drop the spike from history so the next threshold is
-            # computed from the surrounding regime, not the trigger.
-            if self.triggered and self.history:
-                self.history.pop()
+            if len(prior_window) >= 5:
+                self.threshold = float(np.percentile(prior_window, self.k))
+            raw_fire = bool(p_trans > self.threshold)
 
         elif self.method == "cusum":
             mu_ref = float(np.mean(window[:-1])) if len(window) > 1 else 0.3
             self.cusum_S = max(0.0,
                 self.cusum_S + (p_trans - mu_ref - self.slack))
-            self.triggered = bool(self.cusum_S > self.h)
-            if self.triggered:
+            raw_fire = bool(self.cusum_S > self.h)
+            if raw_fire:
                 self.cusum_S = 0.0   # reset after detection
 
         else:
             raise ValueError(
                 f"Unknown method: {self.method}. Use 'percentile' or 'cusum'.")
+
+        # Pathology tracking: this is the diagnostic that would have caught
+        # the always-on bug BEFORE a 16-hour run instead of after it.
+        if raw_fire:
+            self.consecutive_raw_triggers += 1
+        else:
+            self.consecutive_raw_triggers = 0
+        self.max_consecutive_raw_triggers = max(
+            self.max_consecutive_raw_triggers, self.consecutive_raw_triggers)
+        if self.consecutive_raw_triggers == 4:
+            print(f"  [AdaptiveRegimeThreshold] WARNING: raw detector has "
+                  f"fired 4 folds in a row (p_trans={p_trans:.3f}, "
+                  f"threshold={self.threshold:.3f}). A real regime rarely "
+                  f"stays 'transitioning' this long -- this usually means "
+                  f"the underlying P(Transition) signal is saturated "
+                  f"(near 0/1 with no in-between), not that the regime is "
+                  f"genuinely persisting. Check HMM state separation.",
+                  flush=True)
+
+        # BUGFIX: expose the pre-cooldown decision. Without this, "triggered"
+        # alone conflates two very different things -- "the signal says no"
+        # and "the signal says yes but cooldown is suppressing it" -- and you
+        # cannot tell which one you're looking at from the outside. Confirmed
+        # this ambiguity in practice: fold 1 of a real run fired (cold-start
+        # noise), consumed the cooldown, and fold 2 -- a DOCUMENTED real
+        # break -- showed "no trigger" with no way to tell if that was a
+        # genuine miss or a masked one. Read `threshold_obj.last_raw_fire`
+        # right after calling update() to see the true underlying signal.
+        self.last_raw_fire = raw_fire
+
+        # Cooldown: a CONFIRMED trigger suppresses re-triggering for
+        # `cooldown` further calls, without touching history/threshold.
+        if self._cooldown_remaining > 0:
+            self._cooldown_remaining -= 1
+            self.triggered = False
+        else:
+            self.triggered = raw_fire
+            if self.triggered:
+                self._cooldown_remaining = self.cooldown
 
         if self.triggered:
             self.trigger_log.append((iteration, p_trans, self.threshold))
@@ -433,6 +512,7 @@ class AdaptiveRegimeThreshold:
             "n_triggers":      len(self.trigger_log),
             "triggers":        self.trigger_log,
             "final_threshold": self.threshold,
+            "max_consecutive_raw_triggers": self.max_consecutive_raw_triggers,
             "cusum_slack":     self.slack,
         }
 
