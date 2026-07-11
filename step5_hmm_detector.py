@@ -295,7 +295,10 @@ print("Method A: Percentile auto-threshold")
 thresh_A = AdaptiveRegimeThreshold(method="percentile", lookback=50, percentile_k=75)
 for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
     obs_fold = rolling_vol[:train_end]
-    gamma_fold = hmm.predict_proba(obs_fold)
+    # FIX: refit HMM on each fold's full training window (paper-quality)
+    hmm_fold = SimpleHMM(n_iter=100, tol=1e-5)
+    hmm_fold.fit(obs_fold)
+    gamma_fold = hmm_fold.predict_proba(obs_fold)
     p_trans_fold = float(gamma_fold[-1, 1])   # P(Trans) at end of training window
     triggered = thresh_A.update(p_trans_fold, iteration=fold_idx)
     print(f"  Fold {fold_idx+1}: train_end={train_end:4d}  "
@@ -312,7 +315,10 @@ print("Method B: CUSUM auto-threshold")
 thresh_B = AdaptiveRegimeThreshold(method="cusum", cusum_slack=0.05, cusum_h=3.0)
 for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
     obs_fold = rolling_vol[:train_end]
-    gamma_fold = hmm.predict_proba(obs_fold)
+    # FIX: refit HMM on each fold's full training window (paper-quality)
+    hmm_fold = SimpleHMM(n_iter=100, tol=1e-5)
+    hmm_fold.fit(obs_fold)
+    gamma_fold = hmm_fold.predict_proba(obs_fold)
     p_trans_fold = float(gamma_fold[-1, 1])
     triggered = thresh_B.update(p_trans_fold, iteration=fold_idx)
     print(f"  Fold {fold_idx+1}: P(Trans)={p_trans_fold:.3f}  "
@@ -341,7 +347,10 @@ for k in [55, 60, 65, 70, 75, 80, 85, 90]:
     triggers = []
     for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
         obs_fold = rolling_vol[:train_end]
-        gf = hmm.predict_proba(obs_fold)
+        # FIX: refit per fold
+        hmm_fold = SimpleHMM(n_iter=100, tol=1e-5)
+        hmm_fold.fit(obs_fold)
+        gf = hmm_fold.predict_proba(obs_fold)
         fired = t.update(float(gf[-1, 1]), fold_idx)
         if fired:
             triggers.append(fold_idx + 1)
@@ -437,7 +446,10 @@ fold_ptrans = []
 fold_ends_x  = []
 for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
     obs_fold = rolling_vol[:train_end]
-    gf = hmm.predict_proba(obs_fold)
+    # FIX: refit per fold
+    hmm_fold = SimpleHMM(n_iter=100, tol=1e-5)
+    hmm_fold.fit(obs_fold)
+    gf = hmm_fold.predict_proba(obs_fold)
     fold_ptrans.append(float(gf[-1, 1]))
     fold_ends_x.append(fold_idx + 1)
 
