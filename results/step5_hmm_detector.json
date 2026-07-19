@@ -1,12 +1,12 @@
 {
   "hmm_params": {
     "mu": [
-      0.5158289368861537,
-      0.8272662873334765
+      0.5158289368861536,
+      0.8272662873334766
     ],
     "sigma": [
-      0.04886381076658724,
-      0.16978422528407136
+      0.048863810766587246,
+      0.1697842252840713
     ],
     "A": [
       [
@@ -14,7 +14,7 @@
         0.043741865282651324
       ],
       [
-        0.021406614901883326,
+        0.02140661490188332,
         0.9785933850981167
       ]
     ],
@@ -25,132 +25,96 @@
   },
   "threshold_method_A": {
     "method": "percentile",
-    "n_triggers": 5,
+    "n_triggers": 2,
     "triggers": [
       [
-        1,
-        0.959366698280727,
-        0.5
-      ],
-      [
-        2,
-        0.9992918212494993,
+        0,
+        0.9999999990390726,
         0.5
       ],
       [
         4,
-        0.9999999999999996,
-        0.9992918212494993
-      ],
-      [
-        5,
-        1.0,
-        0.9998229553123745
-      ],
-      [
-        6,
-        1.0,
-        0.9999999999999998
+        0.9999999999999998,
+        0.5
       ]
     ],
-    "final_threshold": 1.0
+    "final_threshold": 0.9999999998740587,
+    "max_consecutive_raw_triggers": 3,
+    "cusum_slack": 0.1
   },
   "threshold_method_B": {
     "method": "cusum",
     "n_triggers": 0,
     "triggers": [],
-    "final_threshold": 0.5
+    "final_threshold": 0.5,
+    "max_consecutive_raw_triggers": 0,
+    "cusum_slack": 0.05
   },
   "sensitivity_table": [
     {
       "k": 55,
-      "n_triggers": 6,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7,
-        8
+        1,
+        5
       ]
     },
     {
       "k": 60,
-      "n_triggers": 6,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7,
-        8
+        1,
+        5
       ]
     },
     {
       "k": 65,
-      "n_triggers": 6,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7,
-        8
+        1,
+        5
       ]
     },
     {
       "k": 70,
-      "n_triggers": 5,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7
+        1,
+        5
       ]
     },
     {
       "k": 75,
-      "n_triggers": 5,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7
+        1,
+        5
       ]
     },
     {
       "k": 80,
-      "n_triggers": 5,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6,
-        7
+        1,
+        5
       ]
     },
     {
       "k": 85,
-      "n_triggers": 4,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6
+        1,
+        5
       ]
     },
     {
       "k": 90,
-      "n_triggers": 4,
+      "n_triggers": 2,
       "trigger_folds": [
-        2,
-        3,
-        5,
-        6
+        1,
+        5
       ]
     }
   ],
-  "false_alarms_level1": 4
+  "false_alarms_level1": 2
 }
