@@ -196,10 +196,10 @@ def evaluate(pos: np.ndarray, feat_names: list,
             # Fast LightGBM: same model family as final scorer, no proxy mismatch.
             # Fewer estimators/leaves keeps PSO iteration cost low.
             model = LGBMClassifier(n_estimators=40, num_leaves=15,
-                                   learning_rate=0.1, verbosity=-1, random_state=42)
+                                   learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1)
         else:
             model = LGBMClassifier(n_estimators=100, num_leaves=31,
-                                   learning_rate=0.1, verbosity=-1, random_state=42)
+                                   learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1)
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
@@ -255,7 +255,7 @@ def windowed_feature_importance(X_tr, y_tr, feat_names,
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=60, num_leaves=15,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed)),
+                                      random_state=seed, n_jobs=1)),
         ])
         pipe.fit(Xw, yw)
         imp = np.asarray(pipe.named_steps["model"].feature_importances_,
@@ -692,7 +692,7 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed))
+                                      random_state=seed, n_jobs=1))
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])
@@ -995,7 +995,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed))
+                                      random_state=seed, n_jobs=1))
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])

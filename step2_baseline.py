@@ -100,7 +100,7 @@ def walk_forward_cv(
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(
                 n_estimators=100, num_leaves=31,
-                learning_rate=0.1, verbosity=-1, random_state=42
+                learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1
             ))
         ])
         pipe.fit(X_tr, y_tr)
