@@ -196,7 +196,7 @@ def evaluate(pos: np.ndarray, feat_names: list,
             # Fast LightGBM: same model family as final scorer, no proxy mismatch.
             # Fewer estimators/leaves keeps PSO iteration cost low.
             model = LGBMClassifier(n_estimators=40, num_leaves=15,
-                                   learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1)
+                                   learning_rate=0.1, verbosity=-1, random_state=42)
         else:
             model = LGBMClassifier(n_estimators=100, num_leaves=31,
                                    learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1)

@@ -448,7 +448,7 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed, n_jobs=1))
+                                      random_state=seed))
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:, 1])
