@@ -7,3 +7,7 @@ drift.pkl
 *.png
 # Checkpoints: regenerable, provenance-scoped, can get large
 results/checkpoints/
+
+# Report figures ARE deliverables (the .md sources reference them).
+# The blanket *.png above is for regenerable plots/ output, not these.
+!reports/**/*.png
