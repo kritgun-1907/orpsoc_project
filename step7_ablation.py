@@ -340,6 +340,9 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
     # Label folds pre / straddle / post from the ACTUAL break index rather than
     # assuming it lands at N_SPLITS // 2 (which mislabels the straddling fold).
     fold_phase = classify_folds(folds, SWITCH_INDEX.get(level_key))
+    # Does the ground-truth signal set ROTATE at the switch? Only then is the
+    # union-of-all-signals denominator wrong (see _recall_active).
+    _rotates = SWITCH_INDEX.get(level_key) is not None
     theta = THETA if theta is None else theta
 
     t_seed = time.time()
@@ -390,9 +393,55 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
         is_pre_switch = (ph["phase"] == "pre")
 
         def _recall(selected):
+            """
+            UNION recall: fraction of ALL ground-truth signal features found.
+
+            ⚠ ON L4 THIS METRIC REWARDS THE WRONG BEHAVIOUR. The signal set
+            rotates at the switch: s0-s2 are predictive only before it and
+            s3-s4 only after. Measured on the v2 generator, pre-switch window:
+            AUC(s0-s2)=0.938 vs AUC(s3-s4)=0.514; post-switch: 0.545 vs 0.943.
+
+            Union recall CAN still reach 1.0 -- a selector need only keep all
+            five features, including the three or two that are currently dead
+            weight (confirmed empirically: folds 5-8 score 1.00). But a selector
+            behaving CORRECTLY, i.e. dropping the regime that has gone inert,
+            scores at most 3/5 = 0.60 pre-switch and 2/5 = 0.40 post-switch.
+            So the union denominator pays for carrying dead features and
+            penalises correct adaptation -- the exact behaviour the study is
+            trying to measure.
+
+            Rotation is what a regime switch IS, so this is not a defect to fix
+            in the generator (v1 and v2 both rotate, by design). It means the
+            UNION denominator is the wrong denominator. Use
+            `fold_recall_active` below.
+
+            Retained unchanged so step8 and the existing tables keep working.
+            """
             if not true_signals:
                 return float("nan")
             return len(true_signals & set(selected)) / len(true_signals)
+
+        def _recall_active(selected, phase):
+            """
+            Recall against the features that are ACTUALLY predictive in this
+            fold's regime, so the attainable maximum is 1.0 everywhere.
+
+            Levels with no switch (SWITCH_INDEX is None): every signal feature
+            is live throughout, so this is identical to the union recall.
+            Levels with a switch: score against signal_r1 before it and
+            signal_r2 after it. A straddling fold has no single well-defined
+            target set -- its test window spans both regimes -- so it returns
+            NaN rather than a number that silently means two different things.
+            """
+            if not true_signals:
+                return float("nan")
+            if not _rotates:
+                return len(true_signals & set(selected)) / len(true_signals)
+            if phase == "pre" and signal_r1:
+                return len(set(signal_r1) & set(selected)) / len(signal_r1)
+            if phase == "post" and signal_r2:
+                return len(set(signal_r2) & set(selected)) / len(signal_r2)
+            return float("nan")
 
         def _r1_hits(selected):
             return len(set(signal_r1) & set(selected))
@@ -524,7 +573,11 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
         # Recorded for EVERY condition so any downstream analysis can do the
         # 3-way split without re-deriving the geometry. `train_sees_post` says
         # whether adaptation was even possible on this fold.
+        _sel_by_cond = {"baseline": r1, "standard_orpsoc": r2, "apsoll": r3,
+                        "full_hybrid": r4, "full_hybrid_noimp": r5}
         for cond in CONDITIONS:
+            seed_results[cond].setdefault("fold_recall_active", []).append(
+                _recall_active(_sel_by_cond[cond]["selected"], ph["phase"]))
             seed_results[cond].setdefault("fold_phase", []).append(ph["phase"])
             seed_results[cond].setdefault("fold_train_sees_post", []).append(
                 ph["train_sees_post"])
