@@ -815,10 +815,57 @@ def classify_folds(folds, switch_index):
 #  PSO RUNNER — STANDARD OrPSOC  (condition 2 in ablation)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _make_scorer(X_tr, y_tr, X_p, y_p, X_v, y_v, feat_names, min_f, theta,
+                 model_factory, criterion, criterion_kwargs):
+    """
+    Build the per-fold fitness closure used by both PSO runners.
+
+    criterion=None  -> the project default: AUC on the single trailing 25%
+                       validation split (FoldEvalContext / evaluate_ctx).
+    criterion=<name> -> one of orpsoc_criteria.ALL_CRITERIA, scored by a
+                       CriterionBank built from the TRAINING window only.
+
+    NOTE: the theta blend assumes the criterion is on an AUC-like [0,1] scale.
+    That holds for current / mean_k / median_k / min_k / mean_sd / mb_perf /
+    pooled. It does NOT hold for mb_thresh, which is a signed sum of selection
+    frequencies -- blending that with a compactness term is meaningless, so it
+    is rejected here rather than silently producing nonsense.
+    """
+    if criterion is None:
+        ctx = FoldEvalContext(X_p, y_p, X_v, y_v, feat_names,
+                              model_factory=model_factory)
+
+        def _score(pos):
+            return evaluate_ctx(pos, ctx, min_f, theta)
+        return _score
+
+    if criterion in ("mb_thresh", "mb_stability"):
+        raise ValueError(
+            f"criterion={criterion!r} is not on an AUC scale and cannot be "
+            f"blended with the compactness term. Use it as a standalone "
+            f"ranking, not as a PSO fitness.")
+
+    from orpsoc_criteria import CriterionBank
+    bank = CriterionBank(X_tr, y_tr, feat_names, seed=0,
+                         **(criterion_kwargs or {}))
+    n_feat = len(feat_names)
+
+    def _score(pos):
+        idx = np.where(pos == 1)[0]
+        if len(idx) < min_f:
+            return -1.0
+        s = bank.score(idx, criterion)
+        if not np.isfinite(s):
+            return -1.0
+        return float(theta * s + (1.0 - theta) * (1.0 - len(idx) / n_feat))
+    return _score
+
+
 def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                         seed=42, n_particles=20, max_iter=60,
                         cr=0.6, w_max=0.9, w_min=0.4, min_f=3,
-                        theta=0.5, model_factory=None, **kwargs):
+                        theta=0.5, model_factory=None,
+                        criterion=None, criterion_kwargs=None, **kwargs):
     """
     Standard OrPSOC: orthogonal init + two-point crossover, fixed cr,
     linear w decay.  No adaptive-c, no leadership update, no HMM.
@@ -839,10 +886,10 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
-    # Imputer + scaler hoisted out of the particle loop (see FoldEvalContext).
-    # Fit on X_p only; X_te is not present in this object.
-    _ctx = FoldEvalContext(X_p, y_p, X_v, y_v, feat_names,
-                           model_factory=model_factory)
+    # Fitness closure: default trailing-window AUC, or a named criterion.
+    _score = _make_scorer(X_tr, y_tr, X_p, y_p, X_v, y_v, feat_names,
+                          min_f, theta, model_factory, criterion,
+                          criterion_kwargs)
 
     # Position cache: same binary vector → skip re-evaluation (~26% fewer fits).
     # Key is the raw 0/1 bytes rather than a tuple of Python ints -- one small
@@ -852,7 +899,7 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         key = pos.astype(np.uint8).tobytes()
         val = _cache.get(key)
         if val is None:
-            val = _cache[key] = evaluate_ctx(pos, _ctx, min_f, theta)
+            val = _cache[key] = _score(pos)
         return val
 
     # Initialise
@@ -944,7 +991,8 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       use_importance_reinit=True,
                       importance_window_frac=0.4,
                       apsoll_patience=1, apsoll_rearm_after=None,
-                      apsoll_warmup=5, model_factory=None, **kwargs):
+                      apsoll_warmup=5, model_factory=None,
+                      criterion=None, criterion_kwargs=None, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
@@ -1037,10 +1085,10 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
-    # Imputer + scaler hoisted out of the particle loop (see FoldEvalContext).
-    # Fit on X_p only; X_te is not present in this object.
-    _ctx = FoldEvalContext(X_p, y_p, X_v, y_v, feat_names,
-                           model_factory=model_factory)
+    # Fitness closure: default trailing-window AUC, or a named criterion.
+    _score = _make_scorer(X_tr, y_tr, X_p, y_p, X_v, y_v, feat_names,
+                          min_f, theta, model_factory, criterion,
+                          criterion_kwargs)
 
     # Position cache: same binary vector → skip re-evaluation.
     _cache = {}
@@ -1048,7 +1096,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
         key = pos.astype(np.uint8).tobytes()
         val = _cache.get(key)
         if val is None:
-            val = _cache[key] = evaluate_ctx(pos, _ctx, min_f, theta)
+            val = _cache[key] = _score(pos)
         return val
 
     # Initialise
