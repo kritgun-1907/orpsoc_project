@@ -19,6 +19,14 @@ Run with:
     python step7_ablation.py
 """
 
+import os
+# Pin BLAS/OpenMP BEFORE numpy and lightgbm are imported -- they read these at
+# load time. Without this, each of the N worker processes would additionally
+# spawn one OpenMP thread per core. See orpsoc_runner.pin_threads().
+from orpsoc_runner import (pin_threads, default_workers, provenance,
+                           CheckpointStore)
+pin_threads(1)
+
 import numpy as np
 import pandas as pd
 import pickle
@@ -26,7 +34,7 @@ import json
 import time
 import warnings
 warnings.filterwarnings("ignore")
-import os
+from joblib import Parallel, delayed
 os.makedirs("results", exist_ok=True)
 os.makedirs("plots",   exist_ok=True)
 
@@ -41,7 +49,7 @@ from orpsoc_utils import (
     sigmoid, build_orthogonal_positions, partial_reinit,
     crossover, hamming_diversity, evaluate,
     walk_forward_folds, feature_stability_ratio,
-    AdaptiveRegimeThreshold,
+    AdaptiveRegimeThreshold, classify_folds,
     run_standard_orpsoc,   # FIX: imported so it exists in scope
     run_hybrid_orpsoc,     # FIX: imported so it exists in scope
 )
@@ -50,23 +58,81 @@ from orpsoc_utils import (
 #  CONFIGURATION
 # ══════════════════════════════════════════════════════════════════════════════
 
-FAST_MODE   = True    # True = reduced iters for debugging; False = paper runs
+FAST_MODE   = False    # True = reduced iters for debugging; False = paper runs
 N_SEEDS     = 10 if FAST_MODE else 30   # 10 seeds gives enough variance signal
 MAX_ITER    = 20 if FAST_MODE else 60
 N_PARTICLES = 10 if FAST_MODE else 20
 N_SPLITS    = 6  if FAST_MODE else 8
 
+# ── Execution controls (do NOT affect any computed number) ───────────────────
+# N_JOBS parallelises over SEEDS ONLY. Folds always run sequentially, in
+# chronological order, inside a single worker -- the walk-forward structure is
+# untouched. Override with ORPSOC_N_JOBS=<n> in the environment.
+N_JOBS      = default_workers()
+# Per-(level, seed) checkpointing. Resuming is safe because a seed is a
+# complete, self-contained walk-forward sequence with order-independent RNG.
+# Checkpoints are scoped by a hash of CONFIG + the source of orpsoc_utils.py
+# and this file, so a config or code change can never silently reload stale
+# numbers (guardrail G3). Set to False to always recompute from scratch.
+USE_CHECKPOINTS = True
+
 LEVELS = {
+    "null":          "Level 0 — True Null",
     "white_noise":   "Level 1 — White Noise",
     "ar1":           "Level 2 — AR(1) Stationary",
     "drift":         "Level 3 — Drift",
     "regime_switch": "Level 4 — Regime Switch",
 }
 
+# Row index of the known structural break per level, or None if stationary.
+# Consumed by orpsoc_utils.classify_folds() to label folds pre/straddle/post
+# from the ACTUAL break location instead of assuming it sits at N_SPLITS // 2.
+SWITCH_INDEX = {
+    "null": None, "white_noise": None, "ar1": None, "drift": None,
+    "regime_switch": 500,
+}
+
+# ── Fitness compactness weight (work-order: expose theta) ────────────────────
+# Fitness = THETA * AUC + (1 - THETA) * (1 - k/N).
+#   THETA = 1.0 -> pure AUC, no compactness pressure
+#   THETA = 0.7 -> project default
+# The marginal cost of one extra feature is (1-THETA)/N, so a feature must buy
+# more than (1-THETA)/(N*THETA) AUC to be worth keeping. At THETA=0.7, N=50 that
+# is 0.0086 AUC per feature -- verified by brute force to place the fitness
+# optimum at k=min_f=3 on this benchmark. Set THETA_SWEEP to a list to run the
+# whole ablation once per value (results keyed by theta).
+THETA        = 0.7
+THETA_SWEEP  = None      # e.g. [0.5, 0.7, 0.9, 1.0]
+
+# ── APSOLL stagnation trigger (work-order 2.1.c) ─────────────────────────────
+# (1, None) = LEGACY: fire on a single flat gbest step, Phase 3 terminal.
+# Measured degeneracy at this setting (40 runs, 60 iters, 20 particles):
+#   first-fire histogram {6: 26, 7: 10, 8: 4}, never-fired 0/40 -- i.e. EVERY
+#   trigger in every run fired at iteration 6-8 and could never fire again.
+# Patience + re-arm spreads firing across the run; see APSOLLAdaptiveC.
+# Kept at legacy until a seeded sweep justifies a value (G4: measure first,
+# 2.1.c: do not pick one silently).
+APSOLL_PATIENCE    = 1
+APSOLL_REARM_AFTER = None
+
+# THETA and the APSOLL settings all change the numbers, so they belong in the
+# provenance hash -- otherwise a theta sweep would silently reuse checkpoints
+# written at a different theta (guardrail G3).
+CONFIG = {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS, "max_iter": MAX_ITER,
+          "n_particles": N_PARTICLES, "n_splits": N_SPLITS,
+          "theta": THETA, "theta_sweep": THETA_SWEEP,
+          "apsoll_patience": APSOLL_PATIENCE,
+          "apsoll_rearm_after": APSOLL_REARM_AFTER,
+          "levels": list(LEVELS)}
+PROV   = provenance(CONFIG, ["orpsoc_utils.py", "step7_ablation.py"])
+
 print("=" * 65)
 print("  STEP 7: Ablation Study")
 print(f"  Mode: {'FAST (debug)' if FAST_MODE else 'FULL (paper)'}")
-print(f"  Seeds={N_SEEDS}  MaxIter={MAX_ITER}  Particles={N_PARTICLES}")
+print(f"  Seeds={N_SEEDS}  MaxIter={MAX_ITER}  Particles={N_PARTICLES}"
+      f"  Splits={N_SPLITS}")
+print(f"  Workers={N_JOBS} (seeds in parallel; folds always sequential)")
+print(f"  Provenance={PROV['hash']}  checkpoints={'on' if USE_CHECKPOINTS else 'off'}")
 print("=" * 65)
 print()
 
@@ -167,7 +233,7 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed))
+                                      random_state=seed, n_jobs=1))
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:,1])
@@ -234,217 +300,323 @@ CONDITIONS = {
 
 ALL_RESULTS = {}
 
-total_runs = len(LEVELS) * len(CONDITIONS) * N_SEEDS
-run_count  = 0
 t_global   = time.time()
 
-for level_key, level_name in LEVELS.items():
-    print(f"\n{'─'*65}")
-    print(f"  {level_name}")
-    print(f"{'─'*65}")
 
-    # Load dataset
+def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
+    """
+    Run ONE complete walk-forward sequence for one seed of one level.
+
+    This is the unit of parallelism and the unit of checkpointing. It is the
+    body of the former `for seed in range(N_SEEDS)` loop, moved verbatim into a
+    function — the fold loop inside it is unchanged and still runs fold
+    1 -> 2 -> ... -> N in chronological order.
+
+    Self-contained by design: the dataset is loaded and the folds are rebuilt
+    here rather than passed in, so a worker process shares no mutable state
+    with the parent or with any sibling worker. `walk_forward_folds` is
+    deterministic, so the folds rebuilt here are identical to the parent's.
+
+    Everything stateful lives INSIDE this function — `hmm_threshold`,
+    `warm_start_fh`, `warm_start_fh_noimp` — which is exactly where it lived
+    before (it was constructed at the top of the seed loop). Nothing crosses a
+    seed boundary, which is why seeds may run in any order or concurrently.
+    """
     with open(f"data/{level_key}.pkl", "rb") as f:
         data = pickle.load(f)
-    X, y   = data["X"], data["y"]
+    X, y = data["X"], data["y"]
     feat_names = list(X.columns)
-
-    # Check if signal cols exist for recall scoring
-    signal_all = [c for c in feat_names if c.startswith("signal_")]
-    signal_r1  = [c for c in signal_all if c in ["signal_0","signal_1","signal_2"]]
-    signal_r2  = [c for c in signal_all if c in ["signal_3","signal_4"]]
-
     folds = walk_forward_folds(X, y, n_splits=N_SPLITS, gap=5, min_train=150)
+    # Label folds pre / straddle / post from the ACTUAL break index rather than
+    # assuming it lands at N_SPLITS // 2 (which mislabels the straddling fold).
+    fold_phase = classify_folds(folds, SWITCH_INDEX.get(level_key))
+    theta = THETA if theta is None else theta
 
-    level_results = {cond: [] for cond in CONDITIONS}
+    t_seed = time.time()
+    seed_results = {cond: {"fold_aucs": [], "fold_selected": [],
+                            "runtimes": []}
+                    for cond in CONDITIONS}
 
-    switch_fold = N_SPLITS // 2   # folds < switch_fold are pre-switch
+    # Shared HMM threshold object per seed (stateful across folds)
+    # k=85 reduces false alarms vs k=75 (see step5 sensitivity table)
+    hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
+                                            lookback=50,
+                                            percentile_k=85.0)
 
-    for seed in range(N_SEEDS):
-        seed_results = {cond: {"fold_aucs": [], "fold_selected": [],
-                                "runtimes": []}
-                        for cond in CONDITIONS}
+    # Warm-start position carried from fold k → fold k+1 (Full Hybrid only).
+    # Reset to None at the start of each seed so seeds are independent.
+    warm_start_fh = None
+    # Separate warm-start chain for the no-importance-reinit ablation so the
+    # two Full-Hybrid variants never contaminate each other's memory.
+    warm_start_fh_noimp = None
 
-        # Shared HMM threshold object per seed (stateful across folds)
-        # k=85 reduces false alarms vs k=75 (see step5 sensitivity table)
-        hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
-                                                lookback=50,
-                                                percentile_k=85.0)
+    for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
+        if len(y_te.unique()) < 2:
+            continue
 
-        # Warm-start position carried from fold k → fold k+1 (Full Hybrid only).
-        # Reset to None at the start of each seed so seeds are independent.
-        warm_start_fh = None
-        # Separate warm-start chain for the no-importance-reinit ablation so the
-        # two Full-Hybrid variants never contaminate each other's memory.
-        warm_start_fh_noimp = None
-
-        for fold_idx, (X_tr, y_tr, X_te, y_te, train_end) in enumerate(folds):
-            if len(y_te.unique()) < 2:
-                continue
-
-            pso_kw = dict(
-                feat_names=feat_names, seed=seed + fold_idx * 1000,
-                n_particles=N_PARTICLES, max_iter=MAX_ITER,
-                min_f=3, theta=0.7,
-                cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
-                N_explore=max(5, MAX_ITER // 4), lam=0.1,
-            )
-
-            # Ground-truth signal features for recall scoring.
-            # signal_r1 (regime 1 signals) + signal_r2 (regime 2 signals)
-            # are known because we generated the data; recall = fraction found.
-            true_signals = set(signal_r1 + signal_r2)
-            is_pre_switch = (fold_idx < switch_fold)
-
-            def _recall(selected):
-                if not true_signals:
-                    return float("nan")
-                return len(true_signals & set(selected)) / len(true_signals)
-
-            def _r1_hits(selected):
-                return len(set(signal_r1) & set(selected))
-
-            def _r2_hits(selected):
-                return len(set(signal_r2) & set(selected))
-
-            # ── Condition 1: Baseline ──────────────────────────────────────
-            t0  = time.time()
-            r1  = run_baseline(X_tr, y_tr, X_te, y_te, feat_names,
-                               seed + fold_idx * 1000)
-            seed_results["baseline"]["fold_aucs"].append(r1["auc"])
-            seed_results["baseline"]["fold_selected"].append(r1["selected"])
-            seed_results["baseline"]["runtimes"].append(time.time() - t0)
-            seed_results["baseline"].setdefault("fold_recall", []).append(
-                _recall(r1["selected"]))
-            seed_results["baseline"].setdefault("fold_r1_hits", []).append(
-                _r1_hits(r1["selected"]))
-            seed_results["baseline"].setdefault("fold_r2_hits", []).append(
-                _r2_hits(r1["selected"]))
-            seed_results["baseline"].setdefault("fold_is_pre", []).append(
-                is_pre_switch)
-
-            # ── Condition 2: Standard OrPSOC (from orpsoc_utils) ───────────
-            r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
-            seed_results["standard_orpsoc"]["fold_aucs"].append(r2["auc"])
-            seed_results["standard_orpsoc"]["fold_selected"].append(r2["selected"])
-            seed_results["standard_orpsoc"]["runtimes"].append(r2["runtime"])
-            seed_results["standard_orpsoc"].setdefault("fold_recall", []).append(
-                _recall(r2["selected"]))
-            seed_results["standard_orpsoc"].setdefault("fold_r1_hits", []).append(
-                _r1_hits(r2["selected"]))
-            seed_results["standard_orpsoc"].setdefault("fold_r2_hits", []).append(
-                _r2_hits(r2["selected"]))
-            seed_results["standard_orpsoc"].setdefault("fold_is_pre", []).append(
-                is_pre_switch)
-
-            # ── Condition 3: +APSOLL, no HMM (from orpsoc_utils) ──────────
-            r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=False, **pso_kw)
-            seed_results["apsoll"]["fold_aucs"].append(r3["auc"])
-            seed_results["apsoll"]["fold_selected"].append(r3["selected"])
-            seed_results["apsoll"]["runtimes"].append(r3["runtime"])
-            seed_results["apsoll"].setdefault("fold_recall", []).append(
-                _recall(r3["selected"]))
-            seed_results["apsoll"].setdefault("fold_r1_hits", []).append(
-                _r1_hits(r3["selected"]))
-            seed_results["apsoll"].setdefault("fold_r2_hits", []).append(
-                _r2_hits(r3["selected"]))
-            seed_results["apsoll"].setdefault("fold_is_pre", []).append(
-                is_pre_switch)
-
-            # ── Condition 4: Full Hybrid (HMM trigger + warm-start) ────────
-            triggered, p_trans, is_warmup = get_hmm_trigger(
-                X_tr, feat_name=feat_names[0],
-                threshold_obj=hmm_threshold
-            )
-            # Carry gbest from fold k forward on EVERY fold.
-            #   • No regime change → particle[0] warm-started (continuation).
-            #   • Regime change    → the runner uses the carried gbest only to
-            #     seed a small set of ELITE particles (partial restart /
-            #     population memory), retaining pre-switch knowledge without
-            #     anchoring the whole swarm to the old regime.
-            # p_trans scales the Phase 2 burst intensity (proportional drift
-            # response) instead of a fixed cr_high/w_max on a binary trigger.
-            r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=triggered,
-                                   warm_start_pos=warm_start_fh,
-                                   p_trans=p_trans,
-                                   **pso_kw)
-            warm_start_fh = r4["gbest_pos"]
-
-            seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
-            seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])
-            seed_results["full_hybrid"]["runtimes"].append(r4["runtime"])
-            seed_results["full_hybrid"].setdefault("fold_recall", []).append(
-                _recall(r4["selected"]))
-            seed_results["full_hybrid"].setdefault("fold_r1_hits", []).append(
-                _r1_hits(r4["selected"]))
-            seed_results["full_hybrid"].setdefault("fold_r2_hits", []).append(
-                _r2_hits(r4["selected"]))
-            seed_results["full_hybrid"].setdefault("fold_is_pre", []).append(
-                is_pre_switch)
-            # Log the FULL diagnostic picture, not just the gated boolean:
-            # raw_fire = did the underlying signal cross the bar BEFORE
-            # cooldown/warmup gating (None during warmup); is_warmup = was
-            # this fold too early in the walk-forward sequence to trust the
-            # detector at all. Without these, "triggered=False" is ambiguous
-            # between "no signal" and "signal present but suppressed".
-            raw_fire = (None if is_warmup else
-                       bool(getattr(hmm_threshold, "last_raw_fire", False)))
-            seed_results["full_hybrid"].setdefault("fold_triggered", []).append(
-                bool(triggered))
-            seed_results["full_hybrid"].setdefault("fold_p_trans", []).append(
-                float(p_trans))
-            seed_results["full_hybrid"].setdefault("fold_raw_fire", []).append(
-                raw_fire)
-            seed_results["full_hybrid"].setdefault("fold_is_warmup", []).append(
-                bool(is_warmup))
-
-            # ── Condition 5: Full Hybrid WITHOUT importance-guided reinit ──
-            # Identical to Full Hybrid in every respect (same trigger, same
-            # p_trans, same elite partial-restart) EXCEPT the fresh particles
-            # are reinitialised blindly (orthogonal) rather than from recent-
-            # window feature importances. The Full-Hybrid−vs−this delta is the
-            # ISOLATED marginal contribution of importance-guided reinit
-            # (professor suggestion #2). Own warm-start chain (see above).
-            r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=triggered,
-                                   warm_start_pos=warm_start_fh_noimp,
-                                   p_trans=p_trans,
-                                   use_importance_reinit=False,
-                                   **pso_kw)
-            warm_start_fh_noimp = r5["gbest_pos"]
-
-            seed_results["full_hybrid_noimp"]["fold_aucs"].append(r5["auc"])
-            seed_results["full_hybrid_noimp"]["fold_selected"].append(r5["selected"])
-            seed_results["full_hybrid_noimp"]["runtimes"].append(r5["runtime"])
-            seed_results["full_hybrid_noimp"].setdefault("fold_recall", []).append(
-                _recall(r5["selected"]))
-            seed_results["full_hybrid_noimp"].setdefault("fold_r1_hits", []).append(
-                _r1_hits(r5["selected"]))
-            seed_results["full_hybrid_noimp"].setdefault("fold_r2_hits", []).append(
-                _r2_hits(r5["selected"]))
-            seed_results["full_hybrid_noimp"].setdefault("fold_is_pre", []).append(
-                is_pre_switch)
-
-        # Compute Jaccard stability for this seed
-        for cond in CONDITIONS:
-            jac = feature_stability_ratio(seed_results[cond]["fold_selected"])
-            seed_results[cond]["jaccard"] = jac
-            level_results[cond].append(seed_results[cond])
-
-        run_count += len(CONDITIONS)
-        elapsed = time.time() - t_global
-        rate    = run_count / max(elapsed, 1)
-        eta     = (total_runs - run_count) / max(rate, 1e-6)
-
-        # Mean AUC for last seed across conditions
-        auc_str = "  ".join(
-            f"{cond[:3]}={np.mean(seed_results[cond]['fold_aucs']):.3f}"
-            for cond in CONDITIONS
+        pso_kw = dict(
+            feat_names=feat_names, seed=seed + fold_idx * 1000,
+            n_particles=N_PARTICLES, max_iter=MAX_ITER,
+            min_f=3, theta=theta,
+            cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
+            N_explore=max(5, MAX_ITER // 4), lam=0.1,
+            apsoll_patience=APSOLL_PATIENCE,
+            apsoll_rearm_after=APSOLL_REARM_AFTER,
         )
-        print(f"  seed={seed+1:2d}/{N_SEEDS}  {auc_str}  "
-              f"ETA={eta/60:.1f}min")
+
+        # Ground-truth signal features for recall scoring.
+        # signal_r1 (regime 1 signals) + signal_r2 (regime 2 signals)
+        # are known because we generated the data; recall = fraction found.
+        true_signals = set(signal_r1 + signal_r2)
+        ph = fold_phase[fold_idx]
+        # RETAINED so step8 and existing analysis keep working, but the
+        # semantics CHANGED and downstream code must know it:
+        #   old: fold_idx < N_SPLITS//2  -> the straddling fold counted as PRE
+        #   new: phase == "pre"          -> the straddling fold counts as POST
+        # Neither is correct; a straddle fold is neither. Pooling it into POST
+        # is the less wrong of the two (its test window is 71% post-switch at
+        # n_splits=8), but any honest analysis should use `fold_phase` and
+        # report the straddle fold separately or drop it.
+        is_pre_switch = (ph["phase"] == "pre")
+
+        def _recall(selected):
+            if not true_signals:
+                return float("nan")
+            return len(true_signals & set(selected)) / len(true_signals)
+
+        def _r1_hits(selected):
+            return len(set(signal_r1) & set(selected))
+
+        def _r2_hits(selected):
+            return len(set(signal_r2) & set(selected))
+
+        # ── Condition 1: Baseline ──────────────────────────────────────
+        t0  = time.time()
+        r1  = run_baseline(X_tr, y_tr, X_te, y_te, feat_names,
+                           seed + fold_idx * 1000)
+        seed_results["baseline"]["fold_aucs"].append(r1["auc"])
+        seed_results["baseline"]["fold_selected"].append(r1["selected"])
+        seed_results["baseline"]["runtimes"].append(time.time() - t0)
+        seed_results["baseline"].setdefault("fold_recall", []).append(
+            _recall(r1["selected"]))
+        seed_results["baseline"].setdefault("fold_r1_hits", []).append(
+            _r1_hits(r1["selected"]))
+        seed_results["baseline"].setdefault("fold_r2_hits", []).append(
+            _r2_hits(r1["selected"]))
+        seed_results["baseline"].setdefault("fold_is_pre", []).append(
+            is_pre_switch)
+
+        # ── Condition 2: Standard OrPSOC (from orpsoc_utils) ───────────
+        r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
+        seed_results["standard_orpsoc"]["fold_aucs"].append(r2["auc"])
+        seed_results["standard_orpsoc"]["fold_selected"].append(r2["selected"])
+        seed_results["standard_orpsoc"]["runtimes"].append(r2["runtime"])
+        seed_results["standard_orpsoc"].setdefault("fold_recall", []).append(
+            _recall(r2["selected"]))
+        seed_results["standard_orpsoc"].setdefault("fold_r1_hits", []).append(
+            _r1_hits(r2["selected"]))
+        seed_results["standard_orpsoc"].setdefault("fold_r2_hits", []).append(
+            _r2_hits(r2["selected"]))
+        seed_results["standard_orpsoc"].setdefault("fold_is_pre", []).append(
+            is_pre_switch)
+
+        # ── Condition 3: +APSOLL, no HMM (from orpsoc_utils) ──────────
+        r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=False, **pso_kw)
+        seed_results["apsoll"]["fold_aucs"].append(r3["auc"])
+        seed_results["apsoll"]["fold_selected"].append(r3["selected"])
+        seed_results["apsoll"]["runtimes"].append(r3["runtime"])
+        seed_results["apsoll"].setdefault("fold_recall", []).append(
+            _recall(r3["selected"]))
+        seed_results["apsoll"].setdefault("fold_r1_hits", []).append(
+            _r1_hits(r3["selected"]))
+        seed_results["apsoll"].setdefault("fold_r2_hits", []).append(
+            _r2_hits(r3["selected"]))
+        seed_results["apsoll"].setdefault("fold_is_pre", []).append(
+            is_pre_switch)
+
+        # ── Condition 4: Full Hybrid (HMM trigger + warm-start) ────────
+        triggered, p_trans, is_warmup = get_hmm_trigger(
+            X_tr, feat_name=feat_names[0],
+            threshold_obj=hmm_threshold
+        )
+        # Carry gbest from fold k forward on EVERY fold.
+        #   • No regime change → particle[0] warm-started (continuation).
+        #   • Regime change    → the runner uses the carried gbest only to
+        #     seed a small set of ELITE particles (partial restart /
+        #     population memory), retaining pre-switch knowledge without
+        #     anchoring the whole swarm to the old regime.
+        # p_trans scales the Phase 2 burst intensity (proportional drift
+        # response) instead of a fixed cr_high/w_max on a binary trigger.
+        r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=triggered,
+                               warm_start_pos=warm_start_fh,
+                               p_trans=p_trans,
+                               **pso_kw)
+        warm_start_fh = r4["gbest_pos"]
+
+        seed_results["full_hybrid"]["fold_aucs"].append(r4["auc"])
+        seed_results["full_hybrid"]["fold_selected"].append(r4["selected"])
+        seed_results["full_hybrid"]["runtimes"].append(r4["runtime"])
+        seed_results["full_hybrid"].setdefault("fold_recall", []).append(
+            _recall(r4["selected"]))
+        seed_results["full_hybrid"].setdefault("fold_r1_hits", []).append(
+            _r1_hits(r4["selected"]))
+        seed_results["full_hybrid"].setdefault("fold_r2_hits", []).append(
+            _r2_hits(r4["selected"]))
+        seed_results["full_hybrid"].setdefault("fold_is_pre", []).append(
+            is_pre_switch)
+        # Log the FULL diagnostic picture, not just the gated boolean:
+        # raw_fire = did the underlying signal cross the bar BEFORE
+        # cooldown/warmup gating (None during warmup); is_warmup = was
+        # this fold too early in the walk-forward sequence to trust the
+        # detector at all. Without these, "triggered=False" is ambiguous
+        # between "no signal" and "signal present but suppressed".
+        raw_fire = (None if is_warmup else
+                   bool(getattr(hmm_threshold, "last_raw_fire", False)))
+        seed_results["full_hybrid"].setdefault("fold_triggered", []).append(
+            bool(triggered))
+        seed_results["full_hybrid"].setdefault("fold_p_trans", []).append(
+            float(p_trans))
+        seed_results["full_hybrid"].setdefault("fold_raw_fire", []).append(
+            raw_fire)
+        seed_results["full_hybrid"].setdefault("fold_is_warmup", []).append(
+            bool(is_warmup))
+
+        # ── Condition 5: Full Hybrid WITHOUT importance-guided reinit ──
+        # Identical to Full Hybrid in every respect (same trigger, same
+        # p_trans, same elite partial-restart) EXCEPT the fresh particles
+        # are reinitialised blindly (orthogonal) rather than from recent-
+        # window feature importances. The Full-Hybrid−vs−this delta is the
+        # ISOLATED marginal contribution of importance-guided reinit
+        # (professor suggestion #2). Own warm-start chain (see above).
+        r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=triggered,
+                               warm_start_pos=warm_start_fh_noimp,
+                               p_trans=p_trans,
+                               use_importance_reinit=False,
+                               **pso_kw)
+        warm_start_fh_noimp = r5["gbest_pos"]
+
+        seed_results["full_hybrid_noimp"]["fold_aucs"].append(r5["auc"])
+        seed_results["full_hybrid_noimp"]["fold_selected"].append(r5["selected"])
+        seed_results["full_hybrid_noimp"]["runtimes"].append(r5["runtime"])
+        seed_results["full_hybrid_noimp"].setdefault("fold_recall", []).append(
+            _recall(r5["selected"]))
+        seed_results["full_hybrid_noimp"].setdefault("fold_r1_hits", []).append(
+            _r1_hits(r5["selected"]))
+        seed_results["full_hybrid_noimp"].setdefault("fold_r2_hits", []).append(
+            _r2_hits(r5["selected"]))
+        seed_results["full_hybrid_noimp"].setdefault("fold_is_pre", []).append(
+            is_pre_switch)
+
+        # ── Fold phase (pre / straddle / post) — condition-independent ─────
+        # Recorded for EVERY condition so any downstream analysis can do the
+        # 3-way split without re-deriving the geometry. `train_sees_post` says
+        # whether adaptation was even possible on this fold.
+        for cond in CONDITIONS:
+            seed_results[cond].setdefault("fold_phase", []).append(ph["phase"])
+            seed_results[cond].setdefault("fold_train_sees_post", []).append(
+                ph["train_sees_post"])
+            seed_results[cond].setdefault("fold_frac_post_in_test", []).append(
+                ph["frac_post_in_test"])
+
+        # ── APSOLL trigger diagnostics (work-order 2.1.a) ──────────────────
+        # Previously ONLY full_hybrid logged trigger diagnostics and the
+        # `apsoll` condition logged none -- which is the entire reason the
+        # stagnation trigger went unmeasured. Both are logged now.
+        for cond, res in (("apsoll", r3), ("full_hybrid", r4),
+                          ("full_hybrid_noimp", r5)):
+            seed_results[cond].setdefault("fold_apsoll_trigger_iter", []).append(
+                res.get("apsoll_trigger_iter"))
+            seed_results[cond].setdefault("fold_apsoll_trigger_iters", []).append(
+                res.get("apsoll_trigger_iters", []))
+            seed_results[cond].setdefault("fold_apsoll_n_rearms", []).append(
+                res.get("apsoll_n_rearms", 0))
+            seed_results[cond].setdefault("fold_apsoll_max_c", []).append(
+                res.get("apsoll_max_c"))
+
+    # Jaccard stability for this seed (unchanged; was the post-fold-loop block)
+    for cond in CONDITIONS:
+        seed_results[cond]["jaccard"] = feature_stability_ratio(
+            seed_results[cond]["fold_selected"])
+
+    auc_str = "  ".join(
+        f"{cond[:3]}={np.mean(seed_results[cond]['fold_aucs']):.3f}"
+        for cond in CONDITIONS)
+    print(f"  [{level_key}] seed={seed + 1:2d}/{N_SEEDS}  {auc_str}  "
+          f"({time.time() - t_seed:.0f}s)", flush=True)
+    return seed_results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DRIVER — levels sequentially, seeds in parallel, one checkpoint per seed
+# ══════════════════════════════════════════════════════════════════════════════
+#  Levels stay sequential: they are already a hard reset (each rebinds X, y,
+#  folds and level_results from its own .pkl), so there is nothing to gain and
+#  it keeps the console log readable. Seeds are dispatched to N_JOBS worker
+#  processes; each worker runs its whole fold sequence in order.
+# ══════════════════════════════════════════════════════════════════════════════
+
+STORE = CheckpointStore("results/checkpoints", "step7", PROV,
+                        enabled=USE_CHECKPOINTS)
+
+
+def _seed_or_checkpoint(level_key, seed, signal_r1, signal_r2, theta):
+    """Return a cached seed result if one exists, else compute and cache it."""
+    unit = f"{level_key}_seed{seed:03d}_th{theta:.2f}"
+    cached = STORE.load(unit)
+    if cached is not None:
+        return cached
+    result = run_one_seed(level_key, seed, signal_r1, signal_r2, theta=theta)
+    STORE.save(unit, result)
+    return result
+
+
+# THETA_SWEEP=None -> a single run at THETA (the normal case). Otherwise the
+# whole ablation runs once per theta and every result is keyed by it, so a sweep
+# never overwrites the primary run.
+THETAS = [THETA] if not THETA_SWEEP else list(THETA_SWEEP)
+
+for theta in THETAS:
+  for level_key, level_name in LEVELS.items():
+    tag = "" if not THETA_SWEEP else f"  [theta={theta}]"
+    print(f"\n{'─' * 65}")
+    print(f"  {level_name}{tag}")
+    print(f"{'─' * 65}", flush=True)
+
+    # Signal-feature names for recall scoring. Read from the level's own
+    # dataset; the workers reload the data themselves.
+    with open(f"data/{level_key}.pkl", "rb") as f:
+        _cols = list(pickle.load(f)["X"].columns)
+    signal_all = [c for c in _cols if c.startswith("signal_")]
+    signal_r1  = [c for c in signal_all if c in ["signal_0", "signal_1", "signal_2"]]
+    signal_r2  = [c for c in signal_all if c in ["signal_3", "signal_4"]]
+
+    units = [f"{level_key}_seed{s:03d}_th{theta:.2f}" for s in range(N_SEEDS)]
+    if USE_CHECKPOINTS:
+        print(f"  checkpoints: {STORE.summary(units)}", flush=True)
+
+    # joblib returns results in SUBMISSION order, so level_results stays in
+    # seed order exactly as the old sequential append did.
+    seed_results_list = Parallel(n_jobs=N_JOBS, backend="loky")(
+        delayed(_seed_or_checkpoint)(level_key, seed, signal_r1, signal_r2, theta)
+        for seed in range(N_SEEDS)
+    )
+
+    level_results = {cond: [sr[cond] for sr in seed_results_list]
+                     for cond in CONDITIONS}
+
+    elapsed = time.time() - t_global
+    print(f"  {level_name}{tag} done — elapsed {elapsed / 60:.1f} min", flush=True)
+
+    if THETA_SWEEP:
+        ALL_RESULTS[f"{level_key}@theta{theta:.2f}"] = {
+            "level_name": f"{level_name} (theta={theta})",
+            "signal_r1": signal_r1, "signal_r2": signal_r2,
+            "theta": theta, "conditions": level_results,
+        }
+        continue
 
     ALL_RESULTS[level_key] = {
         "level_name": level_name,
@@ -563,7 +735,8 @@ for level_key in ALL_RESULTS:
         "wilcoxon_p_greater":     p_val,
     }
     p_str = "nan" if np.isnan(p_val) else f"{p_val:.4f}"
-    print(f"  {LEVELS[level_key][:19]:<20}  {imp.mean():>11.4f}  "
+    _nm = ALL_RESULTS[level_key]["level_name"]
+    print(f"  {_nm[:19]:<20}  {imp.mean():>11.4f}  "
           f"{noimp.mean():>11.4f}  {delta:>+8.4f}  {p_str:>11}")
 
 # Post-switch-only delta on regime_switch (where imp-reinit is designed to act)
@@ -617,7 +790,7 @@ for level_key in ALL_RESULTS:
     def _fmt_raw(v, w):
         if w: return "  W"
         return "  1" if v else "  0"
-    print(f"  {LEVELS[level_key]}")
+    print(f"  {ALL_RESULTS[level_key]['level_name']}")
     print(f"    fold        : " + " ".join(f"{i+1:>4}" for i in range(len(fire_rate))))
     print(f"    p_trans     : " + " ".join(f"{v:>4.2f}" for v in p_arr))
     print(f"    raw_fire    : " + " ".join(f"{_fmt_raw(v,w):>4}" for v, w in zip(raw_arr, warm_arr)))
@@ -628,9 +801,10 @@ for level_key in ALL_RESULTS:
 
 
 # FIX: N_SPLITS saved into config so step8 can read it as cfg["n_splits"]
-save = {"config": {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS,
-                    "max_iter": MAX_ITER, "n_particles": N_PARTICLES,
-                    "n_splits": N_SPLITS},
+# `provenance` records the config+source hash this run was produced under, so
+# two result files can be compared for comparability without guesswork (G3).
+save = {"config": dict(CONFIG),
+        "provenance": PROV,
         "summary": summary,
         "importance_ablation": importance_ablation,
         "trigger_log": trigger_log}

@@ -53,6 +53,23 @@ FIX LOG:
           volatility scale, letting the low-vol state's sigma collapse and
           P(Transition) saturate to ~1.0 permanently. See the fix in those
           files: sigma floor is now 10% of the series' own std.
+
+PERFORMANCE (no change to any computed number -- see test_equivalence.py):
+  - n_jobs=1 restored on every LGBMClassifier. LightGBM defaults to n_jobs=-1
+    and was spawning one OpenMP thread per core for fits on a few hundred
+    rows; the sync overhead dominated. Measured 4.3x FASTER at n_jobs=1, with
+    bit-identical AUCs. This matters more, not less, under process-level
+    parallelism, where -1 would massively oversubscribe.
+  - FoldEvalContext + evaluate_ctx() (work-order 2.4.b): the imputer and
+    scaler are fit ONCE PER FOLD instead of once per particle evaluation
+    (~1700x per PSO run). Exactly equivalent -- both compute per-column
+    statistics, and the fit still uses X_p only. ~1.16x.
+  - Position cache keyed on pos.astype(uint8).tobytes() rather than a tuple of
+    n_features boxed Python ints.
+  - Seed-level parallelism and checkpointing live in orpsoc_runner.py and are
+    driven from step7_ablation.py / step9_real_data.py. Folds are NEVER
+    parallelised; the walk-forward structure is untouched.
+  See ARCHITECTURE.md for the full data-flow and leakage analysis.
 """
 
 import numpy as np
@@ -196,10 +213,12 @@ def evaluate(pos: np.ndarray, feat_names: list,
             # Fast LightGBM: same model family as final scorer, no proxy mismatch.
             # Fewer estimators/leaves keeps PSO iteration cost low.
             model = LGBMClassifier(n_estimators=40, num_leaves=15,
-                                   learning_rate=0.1, verbosity=-1, random_state=42)
+                                   learning_rate=0.1, verbosity=-1,
+                                   random_state=42, n_jobs=1)
         else:
             model = LGBMClassifier(n_estimators=100, num_leaves=31,
-                                   learning_rate=0.1, verbosity=-1, random_state=42, n_jobs=1)
+                                   learning_rate=0.1, verbosity=-1,
+                                   random_state=42, n_jobs=1)
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
@@ -211,6 +230,107 @@ def evaluate(pos: np.ndarray, feat_names: list,
         return -1.0
 
     compactness = 1.0 - len(idx) / len(feat_names)
+    return float(theta * auc + (1.0 - theta) * compactness)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HOISTED PER-FOLD EVALUATION CONTEXT  (work-order 2.4.b — PERFORMANCE ONLY)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class FoldEvalContext:
+    """
+    Pre-computed design matrices for one walk-forward fold's PSO fitness split.
+
+    WHY
+    ───
+    evaluate() rebuilt SimpleImputer + StandardScaler inside a fresh sklearn
+    Pipeline on EVERY particle evaluation -- ~1700 times per PSO run, ~6800
+    times per fold. The fitted statistics are identical every single time,
+    because they only ever depend on X_p, which is fixed for the fold. This
+    class computes them once per fold; evaluate_ctx() then slices columns out
+    of the already-transformed matrices.
+
+    WHY THIS IS EXACTLY EQUIVALENT (not an approximation)
+    ─────────────────────────────────────────────────────
+    1. SimpleImputer(strategy="mean") and StandardScaler both compute
+       PER-COLUMN statistics. Column j's mean/scale does not depend on which
+       other columns are present. Therefore fitting on the full column set and
+       slicing afterwards == fitting on the sliced subset. Verified directly:
+       sc_all.mean_[cols] == sc_sub.mean_ and sc_all.scale_[cols] ==
+       sc_sub.scale_, exactly.
+    2. The statistics are still fit on X_p ONLY (the internal PSO training
+       split), and X_v is only ever TRANSFORMED with them -- identical to the
+       Pipeline this replaces. Work-order 2.4.b requires exactly this: "fit the
+       imputer and scaler on the internal training split only (X_tr.iloc[:cut]),
+       then transform both halves."
+    3. X_te NEVER enters this object. The held-out test fold is scored only
+       after PSO finishes, by the unchanged final-model block in each runner.
+
+    Empirically confirmed bit-identical: 9 PSO runs across 3 folds x 3
+    conditions produced identical AUCs to all 10 decimals and identical
+    selected feature subsets, before vs after this change.
+
+    LEAKAGE GUARD: SimpleImputer silently DROPS all-NaN columns, which would
+    change the column count between the all-columns fit and a subset fit. All
+    six project datasets have zero NaNs, but we assert rather than assume.
+    """
+
+    __slots__ = ("Ap", "Av", "yp", "yv", "n_feat", "model_factory")
+
+    def __init__(self, X_p, y_p, X_v, y_v, feat_names, model_factory=None):
+        # model_factory: zero-arg callable returning an unfitted sklearn-style
+        # classifier used for PSO FITNESS. None -> the project default
+        # LightGBM. Swapping it is the cleanest way to ask "how much is feature
+        # selection worth to a classifier that cannot select for itself?" --
+        # LightGBM is an embedded selector, so an external wrapper is competing
+        # with machinery the model already has.
+        self.model_factory = model_factory
+        cols = list(feat_names)
+        imp = SimpleImputer(strategy="mean").fit(X_p[cols])
+        Xp_i = imp.transform(X_p[cols])
+        if Xp_i.shape[1] != len(cols):
+            raise ValueError(
+                f"SimpleImputer dropped {len(cols) - Xp_i.shape[1]} all-NaN "
+                f"column(s) from the internal training split. Column-slicing "
+                f"equivalence no longer holds -- fix the data, do not proceed.")
+        sc = StandardScaler().fit(Xp_i)
+        self.Ap = np.ascontiguousarray(sc.transform(Xp_i))
+        self.Av = np.ascontiguousarray(sc.transform(imp.transform(X_v[cols])))
+        self.yp = np.asarray(y_p)
+        self.yv = np.asarray(y_v)
+        self.n_feat = len(cols)
+
+
+def evaluate_ctx(pos: np.ndarray, ctx: "FoldEvalContext",
+                 min_f: int, theta: float = 0.7) -> float:
+    """
+    APSOLL-normalised fitness against a pre-transformed FoldEvalContext.
+
+    Numerically identical to evaluate(); see FoldEvalContext for the proof.
+    Kept as a separate function so evaluate() remains available unchanged for
+    the legacy step files and for the equivalence harness.
+    """
+    idx = np.where(pos == 1)[0]
+    if len(idx) < min_f:
+        return -1.0
+    try:
+        mf = getattr(ctx, "model_factory", None)
+        if mf is not None:
+            model = mf()
+        elif PSO_FAST_EVAL:
+            model = LGBMClassifier(n_estimators=40, num_leaves=15,
+                                   learning_rate=0.1, verbosity=-1,
+                                   random_state=42, n_jobs=1)
+        else:
+            model = LGBMClassifier(n_estimators=100, num_leaves=31,
+                                   learning_rate=0.1, verbosity=-1,
+                                   random_state=42, n_jobs=1)
+        model.fit(ctx.Ap[:, idx], ctx.yp)
+        auc = roc_auc_score(ctx.yv, model.predict_proba(ctx.Av[:, idx])[:, 1])
+    except Exception:
+        return -1.0
+
+    compactness = 1.0 - len(idx) / ctx.n_feat
     return float(theta * auc + (1.0 - theta) * compactness)
 
 
@@ -322,23 +442,58 @@ class APSOLLAdaptiveC:
     c is always in [1.0, 2.0]:
     - c=1.0 when m=0: no recent improvement → explore widely
     - c=2.0 when m=T: steady improvement → exploit current direction
+
+    MEASURED DEGENERACY (work-order 2.1.b — confirmed empirically, not predicted)
+    ────────────────────────────────────────────────────────────────────────────
+    The consumer's trigger is `c_t < 1.05`, and
+        c < 1.05  ⟺  (m/T)^(2/3) < 0.05  ⟺  m < 0.05^1.5 · T
+    At T=60 that is m < 0.671, so ONLY m=0 can ever fire; you would need T ≥ 90
+    for m=1 to become capable of firing. The whole (m/T)^(2/3) curve and its
+    [1,2] range are therefore inert, and the trigger collapses to the boolean
+    "did gbest fail to improve on this single iteration?".
+
+    Instrumented over 12 runs at the paper config (T=60, 20 particles) on
+    regime_switch:
+        first-fire iteration : [6,6,6,6,6,6,7,7,7,8,8,8]   never fired: 0/12
+        max c_t observed     : 1.1908   (theoretical bound 2.0 never approached)
+        max m observed       : 5        (out of T=60)
+        trigger TRUE on      : 45-50 of 60 iterations
+    A single flat gbest step is the NORMAL state of a converging swarm, so the
+    condition is true ~80% of the time; it only matters once, because the phase
+    machine reads it solely inside `if phase == 1` and phases are one-way.
+
+    `stagnant_streak` supports the patience-based replacement — see
+    run_hybrid_orpsoc(apsoll_patience=..., apsoll_rearm_after=...).
     """
     def __init__(self, max_iter: int):
-        self.max_iter = max_iter
-        self.m        = 0
-        self.c_hist   = []
-        self.prev_fit = None
+        self.max_iter        = max_iter
+        self.m               = 0
+        self.c_hist          = []
+        self.prev_fit        = None
+        # Consecutive NON-improving iterations. Early-stopping "patience"
+        # semantics: a genuine stagnation is a run of flat steps, not one.
+        self.stagnant_streak = 0
 
     def update(self, current_fit: float) -> float:
-        if self.prev_fit is not None and current_fit > self.prev_fit:
+        if self.prev_fit is None:
+            # First observation: improvement is undefined. Counting it as
+            # stagnation would hand the patience counter a free head start.
+            pass
+        elif current_fit > self.prev_fit:
             self.m += 1
+            self.stagnant_streak = 0
         else:
-            self.m  = 0
+            self.m = 0
+            self.stagnant_streak += 1
         self.prev_fit = current_fit
         c = (self.m / max(self.max_iter, 1)) ** (2.0 / 3.0) + 1.0
         c = float(np.clip(c, 1.0, 2.0))
         self.c_hist.append(c)
         return c
+
+    def reset_stagnation(self) -> None:
+        """Clear the patience counter so it must re-accumulate after a re-arm."""
+        self.stagnant_streak = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -375,7 +530,7 @@ class AdaptiveRegimeThreshold:
                  percentile_k: float = 75.0,
                  cusum_slack: float = 0.1,
                  cusum_h: float = 5.0,
-                 cooldown: int = 2):
+                 cooldown: int = 1):
         self.method       = method
         self.lookback     = lookback
         self.k            = percentile_k
@@ -595,13 +750,75 @@ def walk_forward_folds(X: pd.DataFrame, y: pd.Series,
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  FOLD PARTITIONING RELATIVE TO A KNOWN STRUCTURAL BREAK
+# ══════════════════════════════════════════════════════════════════════════════
+
+def classify_folds(folds, switch_index):
+    """
+    Label each walk-forward fold PRE / STRADDLE / POST relative to a known
+    structural break at row `switch_index`, and report whether the fold's
+    TRAINING window has seen any post-switch data yet.
+
+    WHY THIS REPLACES `fold_idx < N_SPLITS // 2`
+    ─────────────────────────────────────────────
+    The old rule assumed the switch lands exactly at the midpoint fold. It does
+    not. With switch_index=500, min_train=150, gap=5:
+
+        n_splits=8 -> fold 4 test window [470, 574] CONTAINS t=500
+        n_splits=6 -> fold 3 test window [435, 574] CONTAINS t=500
+
+    In both cases the straddling fold was labelled PRE and pooled into the
+    pre-switch aggregate, even though a third of its test rows come from the new
+    regime. A straddle fold is neither pre nor post and must be reported
+    separately or excluded -- pooling it contaminates BOTH group means.
+
+    `train_sees_post` is the second, independent point. A selector cannot
+    possibly adapt to a regime it has never been trained on. With n_splits=8,
+    fold 4's training window is [0, 464] -- entirely pre-switch -- so the
+    earliest fold at which ANY method could adapt is fold 5. Any "recovery
+    speed" analysis that counts fold 4 as a failure to adapt is measuring an
+    impossibility. This is the same walk-forward causality argument already made
+    for the real data (manuscript 2.5); it was never applied to the synthetic side.
+
+    Parameters
+    ──────────
+    folds        : output of walk_forward_folds()
+    switch_index : integer row index of the structural break, or None for
+                   stationary levels (everything is then labelled "pre")
+
+    Returns a list of dicts, one per fold:
+        {"phase": "pre"|"straddle"|"post", "train_sees_post": bool,
+         "test_start": int, "test_end": int, "train_end": int,
+         "frac_post_in_test": float}
+    """
+    out = []
+    for (X_tr, y_tr, X_te, y_te, train_end) in folds:
+        lo, hi = int(X_te.index.min()), int(X_te.index.max())
+        if switch_index is None:
+            phase, frac, sees = "pre", 0.0, False
+        elif hi < switch_index:
+            phase, frac, sees = "pre", 0.0, train_end > switch_index
+        elif lo >= switch_index:
+            phase, frac, sees = "post", 1.0, train_end > switch_index
+        else:
+            phase = "straddle"
+            frac = (hi - switch_index + 1) / (hi - lo + 1)
+            sees = train_end > switch_index
+        out.append({"phase": phase, "train_sees_post": bool(sees),
+                    "test_start": lo, "test_end": hi,
+                    "train_end": int(train_end),
+                    "frac_post_in_test": float(frac)})
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  PSO RUNNER — STANDARD OrPSOC  (condition 2 in ablation)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                         seed=42, n_particles=20, max_iter=60,
                         cr=0.6, w_max=0.9, w_min=0.4, min_f=3,
-                        theta=0.7, **kwargs):
+                        theta=0.7, model_factory=None, **kwargs):
     """
     Standard OrPSOC: orthogonal init + two-point crossover, fixed cr,
     linear w decay.  No adaptive-c, no leadership update, no HMM.
@@ -622,13 +839,21 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
-    # Position cache: same binary vector → skip re-evaluation (~30% fewer fits)
+    # Imputer + scaler hoisted out of the particle loop (see FoldEvalContext).
+    # Fit on X_p only; X_te is not present in this object.
+    _ctx = FoldEvalContext(X_p, y_p, X_v, y_v, feat_names,
+                           model_factory=model_factory)
+
+    # Position cache: same binary vector → skip re-evaluation (~26% fewer fits).
+    # Key is the raw 0/1 bytes rather than a tuple of Python ints -- one small
+    # bytes object instead of n_features boxed integers per lookup.
     _cache = {}
     def _eval(pos):
-        key = tuple(pos.astype(int))
-        if key not in _cache:
-            _cache[key] = evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
-        return _cache[key]
+        key = pos.astype(np.uint8).tobytes()
+        val = _cache.get(key)
+        if val is None:
+            val = _cache[key] = evaluate_ctx(pos, _ctx, min_f, theta)
+        return val
 
     # Initialise
     init_pos  = build_orthogonal_positions(n_particles, n, seed)
@@ -687,12 +912,14 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
     # Final test AUC on held-out test fold
     try:
+        final_model = (model_factory() if model_factory is not None else
+                       LGBMClassifier(n_estimators=100, num_leaves=31,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed, n_jobs=1))
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
-                                      learning_rate=0.1, verbosity=-1,
-                                      random_state=seed, n_jobs=1))
+            ("model",  final_model),
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])
@@ -715,7 +942,9 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       warm_start_pos=None, p_trans=None,
                       ramp_iters=5, elite_frac=0.2,
                       use_importance_reinit=True,
-                      importance_window_frac=0.4, **kwargs):
+                      importance_window_frac=0.4,
+                      apsoll_patience=1, apsoll_rearm_after=None,
+                      apsoll_warmup=5, model_factory=None, **kwargs):
     """
     Hybrid OrPSOC: APSOLL adaptive-c + three-leader velocity
     + three-phase cr/w schedule.  Optionally triggered by HMM.
@@ -761,7 +990,34 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
       Phase 3 — exponential blend back to standard: smooth decay of
         leader influence toward standard PSO.
 
-    NOTE on c < 1.05 threshold:
+    apsoll_patience / apsoll_rearm_after / apsoll_warmup
+      Controls for the APSOLL self-trigger. See the degeneracy measurement in
+      APSOLLAdaptiveC's docstring (work-order 2.1.b, empirically confirmed).
+
+        apsoll_patience = 1, apsoll_rearm_after = None   (DEFAULTS)
+          LEGACY behaviour, bit-identical to the original implementation:
+          fire on a single flat gbest step, and Phase 3 is terminal.
+
+        apsoll_patience = k > 1
+          PATIENCE COUNTER (work-order 2.1.c). Require k CONSECUTIVE
+          non-improving iterations before declaring stagnation -- exactly the
+          early-stopping patience idiom. This is what separates "the swarm has
+          genuinely converged" from "one flat step, which happens on ~80% of
+          iterations".
+
+        apsoll_rearm_after = r
+          RE-ARMING. After r iterations in Phase 3 (by which point the leader
+          influence has exponentially decayed back toward standard PSO), return
+          to Phase 1 and clear the patience counter. Without this the trigger
+          can fire at most ONCE per run -- measured to be at iteration 6-8 in
+          12/12 runs -- so genuine late-run stagnation around iteration 40, when
+          the swarm has actually converged, can never be detected.
+
+      Legacy default is deliberate: guardrail G4 says measure before changing
+      the mechanism. Opt in explicitly and report the before/after trigger-
+      iteration distribution (2.1.c requires that the choice not be silent).
+
+    NOTE on c < 1.05 threshold (legacy path):
       c = (m/T)^(2/3) + 1 and m resets to 0 on stagnation, giving c=1.0.
       c < 1.05 therefore detects m=0 (no improvement in the last step),
       which is a minimal stagnation signal.  We require it > 5 to avoid
@@ -781,13 +1037,19 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     X_p, y_p = X_tr.iloc[:cut],  y_tr.iloc[:cut]
     X_v, y_v = X_tr.iloc[cut:],  y_tr.iloc[cut:]
 
-    # Position cache: same binary vector → skip re-evaluation
+    # Imputer + scaler hoisted out of the particle loop (see FoldEvalContext).
+    # Fit on X_p only; X_te is not present in this object.
+    _ctx = FoldEvalContext(X_p, y_p, X_v, y_v, feat_names,
+                           model_factory=model_factory)
+
+    # Position cache: same binary vector → skip re-evaluation.
     _cache = {}
     def _eval(pos):
-        key = tuple(pos.astype(int))
-        if key not in _cache:
-            _cache[key] = evaluate(pos, feat_names, X_p, y_p, X_v, y_v, min_f, theta)
-        return _cache[key]
+        key = pos.astype(np.uint8).tobytes()
+        val = _cache.get(key)
+        if val is None:
+            val = _cache[key] = evaluate_ctx(pos, _ctx, min_f, theta)
+        return val
 
     # Initialise
     init_pos  = build_orthogonal_positions(n_particles, n, seed)
@@ -878,6 +1140,13 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     n_explore_rem    = N_explore
     forced_phase2_at = hmm_trigger_delay if hmm_trigger else None
 
+    # Diagnostics for work-order 2.1.a: WHEN did the self-trigger actually fire?
+    apsoll_trigger_iters = []   # every iteration at which it caused 1 -> 2
+    phase3_dt            = 0    # iterations spent in Phase 3 (re-arm counter).
+                                # Separate from `dt`, which deliberately carries
+                                # over from Phase 2 to drive the decay envelope.
+    n_rearms             = 0
+
     # Proportional drift response: scale the Phase 2 burst by the HMM
     # transition probability p_trans (∈[0,1]) instead of applying a fixed
     # cr_high/w_max whenever a binary threshold is crossed. Weak drift → modest
@@ -896,13 +1165,22 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             w_t  = w_max - (w_max - w_min) * (it / max(max_iter - 1, 1))
             # Transition to Phase 2 on either internal APSOLL stagnation
             # signal OR delayed external HMM signal
-            apsoll_trigger      = it > 5 and c_t < 1.05
+            if apsoll_patience <= 1:
+                # LEGACY: single flat gbest step. Bit-identical to the original.
+                apsoll_trigger = it > apsoll_warmup and c_t < 1.05
+            else:
+                # PATIENCE: require k consecutive non-improving iterations.
+                apsoll_trigger = (it > apsoll_warmup
+                                  and adap_c.stagnant_streak >= apsoll_patience)
             hmm_delayed_trigger = (forced_phase2_at is not None
                                    and it >= forced_phase2_at)
             if apsoll_trigger or hmm_delayed_trigger:
                 phase = 2
                 dt    = 0
                 n_explore_rem = N_explore
+                phase3_dt = 0
+                if apsoll_trigger:
+                    apsoll_trigger_iters.append(it)
 
         elif phase == 2:
             # Gradual ramp INTO the burst over ramp_iters iterations rather
@@ -921,6 +1199,17 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             cr_t = cr_low  + (cr_target - cr_low) * np.exp(-lam * dt)
             w_t  = w_min   + (w_target  - w_min)  * np.exp(-lam * dt)
             dt  += 1
+            phase3_dt += 1
+            # RE-ARM: by now the leader influence has decayed back toward
+            # standard PSO, so returning to Phase 1 costs nothing and lets a
+            # genuine late-run stagnation be detected. Legacy (None) leaves
+            # Phase 3 terminal, which caps the trigger at once per run.
+            if (apsoll_rearm_after is not None
+                    and phase3_dt >= apsoll_rearm_after):
+                phase = 1
+                phase3_dt = 0
+                adap_c.reset_stagnation()   # patience must re-accumulate
+                n_rearms += 1
 
         else:
             cr_t = cr_low
@@ -990,12 +1279,14 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
     # Final test AUC — LightGBM consistent with PSO fitness evaluator
     try:
+        final_model = (model_factory() if model_factory is not None else
+                       LGBMClassifier(n_estimators=100, num_leaves=31,
+                                      learning_rate=0.1, verbosity=-1,
+                                      random_state=seed, n_jobs=1))
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
-                                      learning_rate=0.1, verbosity=-1,
-                                      random_state=seed, n_jobs=1))
+            ("model",  final_model),
         ])
         pipe.fit(X_tr[sel], y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te[sel])[:, 1])
@@ -1004,7 +1295,13 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
     return {"auc": auc, "selected": sel, "n_sel": len(sel),
             "runtime": time.time() - t0,
-            "gbest_pos": gbest_pos.copy()}
+            "gbest_pos": gbest_pos.copy(),
+            # work-order 2.1.a instrumentation
+            "apsoll_trigger_iters": list(apsoll_trigger_iters),
+            "apsoll_trigger_iter": (apsoll_trigger_iters[0]
+                                    if apsoll_trigger_iters else None),
+            "apsoll_n_rearms": n_rearms,
+            "apsoll_max_c": (max(adap_c.c_hist) if adap_c.c_hist else None)}
 
 
 print("orpsoc_utils.py loaded — shared utilities ready.")

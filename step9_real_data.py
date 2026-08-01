@@ -43,13 +43,19 @@ Run with:
     python step9_real_data.py
 """
 
+import os
+# Pin BLAS/OpenMP BEFORE numpy and lightgbm are imported -- they read these at
+# load time. See orpsoc_runner.pin_threads().
+from orpsoc_runner import (pin_threads, default_workers, provenance,
+                           CheckpointStore)
+pin_threads(1)
+
 import numpy as np
 import pandas as pd
 import pickle
 import json
 import time
 import io
-import os
 import re
 import ssl
 import zipfile
@@ -66,6 +72,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from lightgbm import LGBMClassifier
 from scipy.stats import wilcoxon   # importance-reinit ablation test
+from joblib import Parallel, delayed
 
 from orpsoc_utils import (
     walk_forward_folds, feature_stability_ratio,
@@ -91,6 +98,22 @@ MAX_ITER    = 20 if FAST_MODE else 60
 N_PARTICLES = 10 if FAST_MODE else 20
 N_SPLITS    = 6  if FAST_MODE else 8
 
+# ── Execution controls (do NOT affect any computed number) ───────────────────
+# N_JOBS parallelises over SEEDS ONLY. Folds always run sequentially, in
+# chronological order, inside a single worker. Override with ORPSOC_N_JOBS.
+N_JOBS      = default_workers()
+# Per-(dataset, seed) checkpointing, scoped by a hash of CONFIG + the source of
+# orpsoc_utils.py and this file. NOTE: this REPLACES the old
+# "checkpoint_{key}_{fast|full}_v3.pkl" scheme, which keyed only on FAST_MODE
+# and would therefore silently reload results produced under a different
+# MAX_ITER / N_PARTICLES / N_SEEDS / N_SPLITS or a different code version --
+# a direct violation of guardrail G3.
+USE_CHECKPOINTS = True
+
+CONFIG = {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS, "max_iter": MAX_ITER,
+          "n_particles": N_PARTICLES, "n_splits": N_SPLITS}
+PROV   = provenance(CONFIG, ["orpsoc_utils.py", "step9_real_data.py"])
+
 SECTOR_TICKERS = ["XLB", "XLE", "XLF", "XLI", "XLK",
                   "XLP", "XLU", "XLV", "XLY"]
 START_DATE     = "2000-01-01"
@@ -109,6 +132,9 @@ print("  STEP 9: Real Financial Data Validation")
 print(f"  Mode: {'PREP-ONLY' if PREP_ONLY else ('FAST (debug)' if FAST_MODE else 'FULL (paper)')}")
 if not PREP_ONLY:
     print(f"  Seeds={N_SEEDS}  MaxIter={MAX_ITER}  Particles={N_PARTICLES}  Splits={N_SPLITS}")
+    print(f"  Workers={N_JOBS} (seeds in parallel; folds always sequential)")
+    print(f"  Provenance={PROV['hash']}  "
+          f"checkpoints={'on' if USE_CHECKPOINTS else 'off'}")
 print("=" * 68, flush=True)
 
 
@@ -448,7 +474,7 @@ def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
             ("scaler", StandardScaler()),
             ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
                                       learning_rate=0.1, verbosity=-1,
-                                      random_state=seed))
+                                      random_state=seed, n_jobs=1))
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:, 1])
@@ -471,76 +497,127 @@ CONDITIONS = {
 }
 
 
-def run_ablation(X, y, ds_key):
+def run_one_seed(X, y, ds_key, seed):
+    """
+    Run ONE complete walk-forward sequence for one seed of one dataset.
+
+    Unit of parallelism and of checkpointing. This is the body of the former
+    `for seed in range(N_SEEDS)` loop, moved verbatim into a function — the
+    fold loop inside is unchanged and still runs fold 1 -> 2 -> ... -> N in
+    chronological order.
+
+    All stateful objects (`hmm_threshold`, `warm_start_fh`,
+    `warm_start_fh_noimp`) are constructed HERE, which is exactly where they
+    were constructed before: at the top of the seed loop. Nothing crosses a
+    seed boundary, and every RNG is seeded from `seed + fi * 1000`, so seeds
+    may run in any order or concurrently without changing any result.
+    """
     feat_names = list(X.columns)
     folds = walk_forward_folds(X, y, n_splits=N_SPLITS, gap=5, min_train=500)
-    level_results = {c: [] for c in CONDITIONS}
+    t_seed = time.time()
 
-    for seed in range(N_SEEDS):
-        sr = {c: {"fold_aucs": [], "fold_selected": []} for c in CONDITIONS}
-        hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
-                                                lookback=50, percentile_k=85.0)
-        warm_start_fh = None
-        warm_start_fh_noimp = None      # own chain for the no-imp ablation
+    sr = {c: {"fold_aucs": [], "fold_selected": []} for c in CONDITIONS}
+    hmm_threshold = AdaptiveRegimeThreshold(method="percentile",
+                                            lookback=50, percentile_k=85.0)
+    warm_start_fh = None
+    warm_start_fh_noimp = None      # own chain for the no-imp ablation
 
-        for fi, (X_tr, y_tr, X_te, y_te, _) in enumerate(folds):
-            if y_te.nunique() < 2:           # skip degenerate test folds
-                continue
-            pso_kw = dict(
-                feat_names=feat_names, seed=seed + fi * 1000,
-                n_particles=N_PARTICLES, max_iter=MAX_ITER, min_f=3, theta=0.7,
-                cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
-                N_explore=max(5, MAX_ITER // 4), lam=0.1,
-            )
+    for fi, (X_tr, y_tr, X_te, y_te, _) in enumerate(folds):
+        if y_te.nunique() < 2:           # skip degenerate test folds
+            continue
+        pso_kw = dict(
+            feat_names=feat_names, seed=seed + fi * 1000,
+            n_particles=N_PARTICLES, max_iter=MAX_ITER, min_f=3, theta=0.7,
+            cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
+            N_explore=max(5, MAX_ITER // 4), lam=0.1,
+        )
 
-            r1 = run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed + fi * 1000)
-            r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
-            r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=False, **pso_kw)
+        r1 = run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed + fi * 1000)
+        r2 = run_standard_orpsoc(X_tr, y_tr, X_te, y_te, **pso_kw)
+        r3 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=False, **pso_kw)
 
-            triggered, p_trans, is_warmup = get_hmm_trigger(
-                X_tr, feat_name=feat_names[0], threshold_obj=hmm_threshold)
-            r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=triggered,
-                                   warm_start_pos=warm_start_fh,
-                                   p_trans=p_trans, **pso_kw)
-            warm_start_fh = r4["gbest_pos"]
+        triggered, p_trans, is_warmup = get_hmm_trigger(
+            X_tr, feat_name=feat_names[0], threshold_obj=hmm_threshold)
+        r4 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=triggered,
+                               warm_start_pos=warm_start_fh,
+                               p_trans=p_trans, **pso_kw)
+        warm_start_fh = r4["gbest_pos"]
 
-            # Ablation twin: identical but importance-guided reinit OFF.
-            r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
-                                   hmm_trigger=triggered,
-                                   warm_start_pos=warm_start_fh_noimp,
-                                   p_trans=p_trans,
-                                   use_importance_reinit=False, **pso_kw)
-            warm_start_fh_noimp = r5["gbest_pos"]
+        # Ablation twin: identical but importance-guided reinit OFF.
+        r5 = run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te,
+                               hmm_trigger=triggered,
+                               warm_start_pos=warm_start_fh_noimp,
+                               p_trans=p_trans,
+                               use_importance_reinit=False, **pso_kw)
+        warm_start_fh_noimp = r5["gbest_pos"]
 
-            # Log the FULL diagnostic picture, not just the gated boolean:
-            # raw_fire = did the underlying signal cross the bar BEFORE
-            # cooldown/warmup gating (None during warmup, since it was never
-            # evaluated); is_warmup = was this fold too early to trust at all.
-            # Without these, "triggered=False" is ambiguous between "no
-            # signal" and "signal present but suppressed" -- exactly the
-            # ambiguity that made the previous run impossible to diagnose.
-            raw_fire = (None if is_warmup else
-                       bool(getattr(hmm_threshold, "last_raw_fire", False)))
-            sr["full_hybrid"].setdefault("fold_triggered", []).append(bool(triggered))
-            sr["full_hybrid"].setdefault("fold_p_trans", []).append(float(p_trans))
-            sr["full_hybrid"].setdefault("fold_raw_fire", []).append(raw_fire)
-            sr["full_hybrid"].setdefault("fold_is_warmup", []).append(bool(is_warmup))
+        # Log the FULL diagnostic picture, not just the gated boolean:
+        # raw_fire = did the underlying signal cross the bar BEFORE
+        # cooldown/warmup gating (None during warmup, since it was never
+        # evaluated); is_warmup = was this fold too early to trust at all.
+        # Without these, "triggered=False" is ambiguous between "no
+        # signal" and "signal present but suppressed" -- exactly the
+        # ambiguity that made the previous run impossible to diagnose.
+        raw_fire = (None if is_warmup else
+                   bool(getattr(hmm_threshold, "last_raw_fire", False)))
+        sr["full_hybrid"].setdefault("fold_triggered", []).append(bool(triggered))
+        sr["full_hybrid"].setdefault("fold_p_trans", []).append(float(p_trans))
+        sr["full_hybrid"].setdefault("fold_raw_fire", []).append(raw_fire)
+        sr["full_hybrid"].setdefault("fold_is_warmup", []).append(bool(is_warmup))
 
-            for c, r in zip(CONDITIONS, (r1, r2, r3, r4, r5)):
-                sr[c]["fold_aucs"].append(r["auc"])
-                sr[c]["fold_selected"].append(r["selected"])
+        for c, r in zip(CONDITIONS, (r1, r2, r3, r4, r5)):
+            sr[c]["fold_aucs"].append(r["auc"])
+            sr[c]["fold_selected"].append(r["selected"])
 
-        for c in CONDITIONS:
-            sr[c]["jaccard"] = feature_stability_ratio(sr[c]["fold_selected"])
-            level_results[c].append(sr[c])
 
-        mean_auc = {c: np.mean(sr[c]["fold_aucs"]) for c in CONDITIONS}
-        print(f"  [{ds_key}] seed {seed+1}/{N_SEEDS}  " +
-              "  ".join(f"{c[:4]}={mean_auc[c]:.3f}" for c in CONDITIONS), flush=True)
+    for c in CONDITIONS:
+        sr[c]["jaccard"] = feature_stability_ratio(sr[c]["fold_selected"])
 
+    mean_auc = {c: np.mean(sr[c]["fold_aucs"]) for c in CONDITIONS}
+    print(f"  [{ds_key}] seed {seed + 1}/{N_SEEDS}  " +
+          "  ".join(f"{c[:4]}={mean_auc[c]:.3f}" for c in CONDITIONS) +
+          f"  ({time.time() - t_seed:.0f}s)", flush=True)
+    return sr
+
+
+STORE = CheckpointStore("results/checkpoints", "step9", PROV,
+                        enabled=USE_CHECKPOINTS)
+
+
+def _seed_or_checkpoint(X, y, ds_key, seed):
+    """Return a cached seed result if one exists, else compute and cache it."""
+    unit = f"{ds_key}_seed{seed:03d}"
+    cached = STORE.load(unit)
+    if cached is not None:
+        return cached
+    result = run_one_seed(X, y, ds_key, seed)
+    STORE.save(unit, result)
+    return result
+
+
+def run_ablation(X, y, ds_key):
+    """
+    Drive one dataset: seeds in parallel, folds sequential inside each seed.
+
+    joblib returns results in SUBMISSION order, so level_results is in seed
+    order exactly as the old sequential append produced it.
+    """
+    folds = walk_forward_folds(X, y, n_splits=N_SPLITS, gap=5, min_train=500)
+
+    units = [f"{ds_key}_seed{s:03d}" for s in range(N_SEEDS)]
+    if USE_CHECKPOINTS:
+        print(f"  [{ds_key}] checkpoints: {STORE.summary(units)}", flush=True)
+
+    seed_results_list = Parallel(n_jobs=N_JOBS, backend="loky")(
+        delayed(_seed_or_checkpoint)(X, y, ds_key, seed)
+        for seed in range(N_SEEDS)
+    )
+
+    level_results = {c: [sr[c] for sr in seed_results_list] for c in CONDITIONS}
     return level_results, folds
+
 
 
 def break_folds(folds, X_index_dates, break_dates):
@@ -560,30 +637,27 @@ def break_folds(folds, X_index_dates, break_dates):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  CHECKPOINT HELPERS  (save/load ablation results per dataset)
+#  CHECKPOINTING
 # ══════════════════════════════════════════════════════════════════════════════
-
-def _save_checkpoint(key, level_results, folds):
-    """Save ablation results immediately after a dataset finishes."""
-    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v3.pkl"
-    with open(cache, "wb") as f:
-        pickle.dump({"level_results": level_results, "folds": folds}, f)
-    print(f"  [checkpoint] saved → {cache}", flush=True)
-
-
-def _load_checkpoint(key):
-    """
-    Load checkpoint if it exists.
-    Returns (level_results, folds) or None if no checkpoint found.
-    Delete data/checkpoint_<key>.pkl manually to force a fresh rerun.
-    """
-    cache = f"data/checkpoint_{key}_{'fast' if FAST_MODE else 'full'}_v3.pkl"
-    if os.path.exists(cache):
-        with open(cache, "rb") as f:
-            d = pickle.load(f)
-        print(f"  [checkpoint] loaded ← {cache}  (delete to force rerun)", flush=True)
-        return d["level_results"], d["folds"]
-    return None
+#  REMOVED: the old dataset-level `_save_checkpoint` / `_load_checkpoint` pair,
+#  which wrote `data/checkpoint_{key}_{fast|full}_v3.pkl`. That key encoded
+#  FAST_MODE and NOTHING ELSE, so changing MAX_ITER, N_PARTICLES, N_SEEDS,
+#  N_SPLITS, or any pipeline code and re-running would silently reload the
+#  previous results and report them as new -- a direct violation of guardrail
+#  G3 ("two numbers produced under different configs are not comparable"), with
+#  nothing in the output to reveal it.
+#
+#  Replaced by the per-(dataset, seed) CheckpointStore defined above, which:
+#    * scopes checkpoints by a hash of CONFIG + the source of orpsoc_utils.py
+#      and this file, so a config or code change gets a NEW directory and can
+#      never reuse stale units (old ones are kept, not destroyed, so re-running
+#      at a previous config still resumes);
+#    * stores the provenance record inside every file and re-verifies on load;
+#    * checkpoints at seed granularity, so a crash costs one seed, not a whole
+#      dataset;
+#    * writes atomically (tmp + os.replace), so a kill mid-write cannot leave a
+#      half-written checkpoint that would load as valid.
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -650,20 +724,14 @@ def main():
         return
 
     # ── 2. Run ablation on each ─────────────────────────────────────────────
-    out = {"config": {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS,
-                      "max_iter": MAX_ITER, "n_particles": N_PARTICLES,
-                      "n_splits": N_SPLITS}, "datasets": {}}
+    out = {"config": dict(CONFIG), "provenance": PROV, "datasets": {}}
     t0 = time.time()
     for key, (X, y, dates) in datasets.items():
         print(f"\n── Ablation: {key} ────────────────────────────────────────", flush=True)
 
-        # Load from checkpoint if available, otherwise run and save checkpoint.
-        cached = _load_checkpoint(key)
-        if cached is not None:
-            level_results, folds = cached
-        else:
-            level_results, folds = run_ablation(X, y, key)
-            _save_checkpoint(key, level_results, folds)
+        # Seeds run in parallel; completed seeds are resumed from the
+        # provenance-scoped checkpoint store (see CHECKPOINTING above).
+        level_results, folds = run_ablation(X, y, key)
 
         # dates comes directly from _align — no post-hoc reconstruction needed.
         brk = break_folds(folds, dates, BREAKS.get(key, []))

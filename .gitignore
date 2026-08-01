@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 drift.pkl
 *.png
+# Checkpoints: regenerable, provenance-scoped, can get large
+results/checkpoints/
