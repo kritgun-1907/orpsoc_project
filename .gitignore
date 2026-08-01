@@ -11,3 +11,6 @@ results/checkpoints/
 # Report figures ARE deliverables (the .md sources reference them).
 # The blanket *.png above is for regenerable plots/ output, not these.
 !reports/**/*.png
+
+# never track macOS metadata, even under reports/
+reports/**/.DS_Store
