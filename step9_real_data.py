@@ -101,6 +101,7 @@ N_SPLITS    = 6  if FAST_MODE else 8
 # ── Execution controls (do NOT affect any computed number) ───────────────────
 # N_JOBS parallelises over SEEDS ONLY. Folds always run sequentially, in
 # chronological order, inside a single worker. Override with ORPSOC_N_JOBS.
+THETA       = 0.5   # compactness weight; see step7_ablation.py for the frontier
 N_JOBS      = default_workers()
 # Per-(dataset, seed) checkpointing, scoped by a hash of CONFIG + the source of
 # orpsoc_utils.py and this file. NOTE: this REPLACES the old
@@ -111,7 +112,8 @@ N_JOBS      = default_workers()
 USE_CHECKPOINTS = True
 
 CONFIG = {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS, "max_iter": MAX_ITER,
-          "n_particles": N_PARTICLES, "n_splits": N_SPLITS}
+          "n_particles": N_PARTICLES, "n_splits": N_SPLITS,
+          "theta": THETA}
 PROV   = provenance(CONFIG, ["orpsoc_utils.py", "step9_real_data.py"])
 
 SECTOR_TICKERS = ["XLB", "XLE", "XLF", "XLI", "XLK",
@@ -527,7 +529,7 @@ def run_one_seed(X, y, ds_key, seed):
             continue
         pso_kw = dict(
             feat_names=feat_names, seed=seed + fi * 1000,
-            n_particles=N_PARTICLES, max_iter=MAX_ITER, min_f=3, theta=0.7,
+            n_particles=N_PARTICLES, max_iter=MAX_ITER, min_f=3, theta=THETA,
             cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
             N_explore=max(5, MAX_ITER // 4), lam=0.1,
         )

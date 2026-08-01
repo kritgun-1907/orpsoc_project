@@ -196,7 +196,7 @@ def hamming_diversity(particles: list) -> float:
 def evaluate(pos: np.ndarray, feat_names: list,
              X_tr, y_tr, X_va, y_va,
              min_f: int,
-             theta: float = 0.7) -> float:
+             theta: float = 0.5) -> float:
     """
     APSOLL-normalised fitness:
         Fitness = θ × AUC  +  (1-θ) × (1 - #selected / N)
@@ -302,7 +302,7 @@ class FoldEvalContext:
 
 
 def evaluate_ctx(pos: np.ndarray, ctx: "FoldEvalContext",
-                 min_f: int, theta: float = 0.7) -> float:
+                 min_f: int, theta: float = 0.5) -> float:
     """
     APSOLL-normalised fitness against a pre-transformed FoldEvalContext.
 
@@ -818,7 +818,7 @@ def classify_folds(folds, switch_index):
 def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                         seed=42, n_particles=20, max_iter=60,
                         cr=0.6, w_max=0.9, w_min=0.4, min_f=3,
-                        theta=0.7, model_factory=None, **kwargs):
+                        theta=0.5, model_factory=None, **kwargs):
     """
     Standard OrPSOC: orthogonal init + two-point crossover, fixed cr,
     linear w decay.  No adaptive-c, no leadership update, no HMM.
@@ -936,7 +936,7 @@ def run_standard_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
 
 def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
                       hmm_trigger=False, seed=42,
-                      n_particles=20, max_iter=60, min_f=3, theta=0.7,
+                      n_particles=20, max_iter=60, min_f=3, theta=0.5,
                       cr_low=0.3, cr_high=0.8, w_max=0.9, w_min=0.4,
                       N_explore=15, lam=0.1, hmm_trigger_delay=7,
                       warm_start_pos=None, p_trans=None,

@@ -95,13 +95,23 @@ SWITCH_INDEX = {
 # ── Fitness compactness weight (work-order: expose theta) ────────────────────
 # Fitness = THETA * AUC + (1 - THETA) * (1 - k/N).
 #   THETA = 1.0 -> pure AUC, no compactness pressure
-#   THETA = 0.7 -> project default
+#   THETA = 0.5 -> project default (see below)
 # The marginal cost of one extra feature is (1-THETA)/N, so a feature must buy
-# more than (1-THETA)/(N*THETA) AUC to be worth keeping. At THETA=0.7, N=50 that
-# is 0.0086 AUC per feature -- verified by brute force to place the fitness
-# optimum at k=min_f=3 on this benchmark. Set THETA_SWEEP to a list to run the
-# whole ablation once per value (results keyed by theta).
-THETA        = 0.7
+# more than (1-THETA)/(N*THETA) AUC to be worth keeping. At THETA=0.5, N=50 that
+# is 0.0200; at the former default of 0.7 it was 0.0086.
+#
+# THETA IS A PARETO DIAL, NOT A NUISANCE PARAMETER. Measured frontier on v1
+# regime_switch (Standard OrPSOC, 4 seeds, 60 iters, 20 particles):
+#     theta=0.5  AUC 0.8500 (95.8% of baseline)   9.50 features (19% of 50)
+#     theta=0.7  AUC 0.8482 (95.6%)              11.03 features (22%)  DOMINATED
+#     theta=0.9  AUC 0.8505 (95.8%)              14.88 features (30%)
+#     theta=1.0  AUC 0.8880 (100.1%)             25.62 features (51%)
+# theta=0.7 is dominated by theta=0.5: same AUC, fewer features. Hence the
+# default moves to 0.5, the compact end of the frontier. theta=1.0 removes the
+# compactness term entirely and reaches AUC parity with the all-features
+# baseline, but at 51% of the features it no longer supports the compactness
+# claim. Set THETA_SWEEP to a list to report the whole frontier.
+THETA        = 0.5
 THETA_SWEEP  = None      # e.g. [0.5, 0.7, 0.9, 1.0]
 
 # ── APSOLL stagnation trigger (work-order 2.1.c) ─────────────────────────────
