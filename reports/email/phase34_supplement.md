@@ -7,8 +7,9 @@ codebase; nothing is quoted from an earlier generation.
 attainable two-sided Wilcoxon *p* is 0.0625, so the significance tests below are
 one-sample t-tests against a deterministic comparator. Phase 4 is one run per
 cell — the filter and baseline arms are deterministic, so they have no seed
-variance to report. Two datasets throughout. These are strong directional
-results, not a 30-seed protocol.
+variance to report. The criterion bake-off in section 4 uses 5 independent candidate pools.
+Two datasets throughout. These are strong directional results, not a 30-seed
+protocol.
 
 ---
 
@@ -101,53 +102,64 @@ dimensions, which wreck a distance metric — hence kNN is the only gainer there
 
 ## 4. The criterion bake-off
 
-![criteria](figs/D_criteria.png){width=full}
+![criteria](figs/D_criteria_seeded.png){width=full}
 
-Criterion isolated from search: 100 candidate subsets per fold, scored causally,
-then "what would a *perfect* search maximising this land on?" Ranked by
-percentage of the achievable gap captured (0% = no better than random picking).
+Criterion isolated from search: **5 independent pools** of 100 candidate subsets
+per fold, scored causally, then "what would a *perfect* search maximising this
+land on?" Ranked by percentage of the achievable gap captured (0% = no better
+than random picking), mean ± std across pools.
 
-| criterion | sector ETF | v2 synthetic |
+| criterion | sector ETF (real) | v2 synthetic |
 |---|---|---|
-| min_k | **40%** | 40% |
-| mean_k | 28% | 48% |
-| mean_sd | 28% | **52%** |
-| median_k | 21% | 42% |
-| current | 17% | 18% |
-| mb_perf | 7% | **57%** |
-| **pooled** | **−25%** | 28% |
-| **mb_stability** | **−35%** | −7% |
-| **mb_thresh** | **−38%** | −26% |
-| *all-features baseline* | *49%* | *54%* |
+| **median_k** | **33% ± 10.4** | **43% ± 12.3** |
+| mean_sd | 32% ± 10.9 | 40% ± 7.4 |
+| min_k | 30% ± 10.5 | 23% ± 11.6 |
+| mean_k | 26% ± 5.7 | 38% ± 13.1 |
+| mb_perf | 24% ± 16.9 | 43% ± 12.8 |
+| current | 23% ± 13.4 | 28% ± 8.9 |
+| **pooled** | 16% ± 21.3 | 28% ± 4.4 |
+| **mb_stability** | **−36% ± 22.5** | −16% ± 14.8 |
+| **mb_thresh** | **−61% ± 13.5** | −18% ± 15.3 |
+| *all-features baseline* | *44%* | *55%* |
 
-Both newly proposed criteria are the worst on real data, and negative percentages
-mean they select subsets *worse than picking at random*.
+> **Correction.** An earlier version of this figure used a **single** candidate
+> pool per fold and was circulated before replication. Its rankings do not hold
+> up: it showed `min_k` best on real data (40%, actually 30%), `median_k` at 21%
+> (actually 33%), and `pooled` at −25% (actually **+16%**, straddling zero). The
+> per-pool spread is 5–22 percentage points, so single-draw rankings were not
+> reliable. This table supersedes it.
+
+**`median_k` is the best criterion on both datasets** — the only one that ranks
+first in both panels. But the margins are not significant at 5 pools: +9.5pp
+over `current` on sector ETF (paired p = 0.247, 4/5 pools) and +15.3pp on v2
+(p = 0.094, 4/5). Against the runner-up `mean_sd` it is +0.6pp and +3.4pp —
+effectively a tie.
+
+**No criterion reaches the all-features baseline on either dataset** (best 33%
+vs 44%; 43% vs 55%). Fixing the compass narrows the deficit; it does not close it.
 
 ![why](figs/E_why_failed.png){width=full}
 
-**Why MB stability fails.** Correlation with test AUC is −0.019 (mean form) and
-−0.454 (classical threshold form) — actively anti-correlated. With 58 features in
-~13 effective dimensions, selection frequency measures which member of a
-collinear cluster arbitrarily won a bootstrap resample, not which features are
-useful; thresholding then concentrates on the in-sample-strongest, least diverse
-set. This is not an implementation artefact: the first version scored by *mean*
-frequency and was size-blind (its argmax picked k≈5.5 against ~16 for every
-size-neutral criterion); rebuilding it in the classical threshold form made the
-result **worse**, which rules that explanation out.
+**Why MB stability fails — and this result is robust.** `mb_thresh` is −61% ±
+13.5 on real data with a *maximum across pools of −38%*: negative in every pool.
+Correlation with test AUC is −0.019 (mean form) and −0.454 (classical threshold
+form) — actively anti-correlated. With 58 features in ~13 effective dimensions,
+selection frequency measures which member of a collinear cluster arbitrarily won
+a bootstrap resample, not which features are useful; thresholding then
+concentrates on the in-sample-strongest, least diverse set. This is not an
+implementation artefact: the first version scored by *mean* frequency and was
+size-blind (its argmax picked k ≈ 5.5 against ~16 for every size-neutral
+criterion); rebuilding it in the classical threshold form made the result
+**worse**, which rules that explanation out.
 
-**Why pooled validation fails.** On sector ETF the HMM regime state is **0.392
-correlated with the target** (y-mean 0.32 vs 0.738 across states) — the target is
-a rolling-volatility threshold and the regime is a rolling-volatility state, so
+**Pooled validation is too noisy to rank, not reliably negative.** At 16% ± 21.3
+on sector ETF it straddles zero. The mechanism identified earlier still holds and
+is worth reporting: the HMM regime state is **0.392 correlated with the target**
+there (y-mean 0.32 vs 0.738 across states), because the target is a
+rolling-volatility threshold and the regime is a rolling-volatility state, so
 conditioning on regime strips out the label variation. On v2, where that
-correlation is 0.010, pooled works (28%). The idea is sound; it is incompatible
-with *this dataset's* target definition.
-
-**No criterion wins on both datasets, and none reaches the baseline on real
-data.** `min_k` is the most consistent (40% on both) but it then hurt in Phase 3
-on three of four cells: +0.0126 (p=0.29) on sector ETF·LogReg, −0.0152 on
-sector ETF·LightGBM, −0.0620 (p<0.001) on v2.
-
----
+correlation is 0.010, pooled is stable (28% ± 4.4). The idea is sound; it is
+incompatible with *this dataset's* target definition.
 
 ## 5. Continuous feature weighting is mathematically inert
 
@@ -187,7 +199,9 @@ on the same trailing-window validation that §1 shows is counterproductive.
 ## 6. What is not yet done
 
 - The full L1–L4 ablation has **not** been re-run on the v2 benchmark.
-- The `min_k` default is **not** locked, pending the ruling in the email.
+- No default is locked, pending the ruling in the email. On the replicated
+  evidence `median_k` is the defensible pick (best on both datasets), not
+  `min_k` as an earlier single-pool run suggested.
 - The LogReg Paradox narrative is **unwritten**, pending the same ruling.
 - Three pending changes each alter reported numbers and should go into one
   regeneration run: v2 data, `fold_recall_active`, and θ = 0.5.
