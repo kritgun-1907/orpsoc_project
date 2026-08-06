@@ -1,21 +1,53 @@
 # OrPSOC Research — Python dependencies
-# Covers all steps (step0–step9), step_real_data.py, and orpsoc_utils.py
-# Tested with Python 3.13
+# Covers all steps (step0–step9), orpsoc_utils.py and the experiments/ scripts.
+#
+# Pins are verified against BOTH interpreters in use:
+#   local     macOS arm64, Python 3.13
+#   EC2       Ubuntu 24.04 x86_64, Python 3.12  (deploy/remote_pipeline.sh)
 #
 # Install with:
 #     pip install -r requirements.txt
+#
+# On Ubuntu 24.04 this MUST go into a virtualenv: the system interpreter is
+# marked PEP 668 externally-managed and pip will refuse to touch it. The deploy
+# pipeline creates one at ~/orpsoc-venv. LightGBM additionally needs libgomp1
+# from apt, or it fails at import rather than at install.
 
+# ── hard dependencies ─────────────────────────────────────────────────────────
 numpy==2.2.6
 pandas==3.0.1
 scipy==1.17.1
 scikit-learn==1.8.0
-statsmodels==0.14.6
-xgboost==3.2.0
 lightgbm==4.6.0
 matplotlib==3.10.8
+statsmodels==0.14.6
 
-# Real-data validation (step_real_data.py) — REQUIRED for that script,
-# which raises SystemExit on import if yfinance is missing. Left unpinned
-# because yfinance releases frequently and pinning it against the numpy/
-# pandas versions above is brittle; install the latest compatible build.
+# joblib drives the seed-level parallelism in step7/step9
+# (`from joblib import Parallel, delayed`). It was previously satisfied only
+# transitively through scikit-learn, which is fragile — a scikit-learn release
+# that vendors or drops it would break the ablation with an ImportError.
+joblib==1.5.3
+
+# ── real-data download path ───────────────────────────────────────────────────
+# yfinance is required by step9 (it raises SystemExit on import if missing).
+# Left unpinned: it releases frequently and pinning it against the numpy/pandas
+# versions above is brittle.
+#
+# NOTE: the deploy pipeline ships data/raw_*.pkl rather than re-downloading,
+# because yfinance returns a different series on a different day. These packages
+# are still needed for the initial fetch and for step9's import-time check.
 yfinance
+
+# requests and certifi back step9's _http_get_bytes fallback. Both imports sit
+# inside try/except with a urllib fallback, so the pipeline runs without them —
+# but with them the Fama-French fetch is far more reliable on macOS, where the
+# Python.framework CA bundle is frequently incomplete and urllib fails with
+# CERTIFICATE_VERIFY_FAILED.
+requests
+certifi
+
+# ── step0 only ────────────────────────────────────────────────────────────────
+# xgboost is imported ONLY by step0_setup.py, the environment checker. No
+# pipeline stage uses it. Kept so step0 still runs; drop it if you want a
+# leaner and faster install on the compute instance.
+xgboost==3.2.0
