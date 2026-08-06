@@ -22,6 +22,15 @@ lightgbm==4.6.0
 matplotlib==3.10.8
 statsmodels==0.14.6
 
+# pyarrow is REQUIRED even though pandas 3.0.1 does not declare it
+# (`Requires: numpy, python-dateutil`). pandas 3.0 backs its `str` dtype with
+# PyArrow, and every DataFrame written here has a string column Index, so the
+# pickles in data/ cannot be READ without it:
+#     SKIP sector_etf: No module named 'pyarrow'
+# It happens to be installed on the dev machine, so the omission is invisible
+# locally and only surfaces on a clean environment such as the EC2 instance.
+pyarrow==23.0.1
+
 # joblib drives the seed-level parallelism in step7/step9
 # (`from joblib import Parallel, delayed`). It was previously satisfied only
 # transitively through scikit-learn, which is fragile — a scikit-learn release

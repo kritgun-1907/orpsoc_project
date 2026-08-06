@@ -59,7 +59,12 @@ echo "  disk: $(df -h "$REPO" | awk 'NR==2{print $4" free of "$2}')"
 #     into the system interpreter, so a venv is required rather than optional
 #   * libgomp is absent, and LightGBM will not even import without it
 # Amazon Linux needs none of this, hence the branch on the package manager.
-if [ ! -f "$REPO/.deps_installed" ]; then
+# Key the marker on the CONTENT of requirements.txt. A plain .deps_installed
+# flag meant that fixing a missing dependency and re-running would skip the
+# install entirely and fail exactly the same way again.
+REQ_HASH="$(sha1sum requirements.txt 2>/dev/null | cut -c1-12 || echo nohash)"
+DEPS_MARKER="$REPO/.deps_installed_$REQ_HASH"
+if [ ! -f "$DEPS_MARKER" ]; then
   log "01_system_packages"
   if command -v apt-get >/dev/null; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -81,9 +86,10 @@ if [ ! -f "$REPO/.deps_installed" ]; then
   # Fail here rather than 40 minutes into step7.
   stage 05_import_check "$PY" -c "import numpy, pandas, sklearn, lightgbm, joblib, scipy; \
 import lightgbm as l; print('  lightgbm', l.__version__, 'imports cleanly')"
-  touch "$REPO/.deps_installed"
+  rm -f "$REPO"/.deps_installed_* 2>/dev/null || true
+  touch "$DEPS_MARKER"
 else
-  log "dependencies already installed (delete .deps_installed to force)"
+  log "dependencies already installed for this requirements.txt (hash $REQ_HASH)"
 fi
 [ -x "$PY" ] || fail "venv python missing at $PY"
 

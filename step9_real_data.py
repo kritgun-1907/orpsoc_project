@@ -709,8 +709,14 @@ def main():
     for key, build in builders.items():
         try:
             X, y, base, dates = build()
+        except ModuleNotFoundError:
+            # Do NOT degrade a missing package into a skipped dataset. Doing so
+            # reported "No datasets could be built (check network / yfinance)"
+            # when the real cause was an uninstalled pyarrow, sending debugging
+            # in entirely the wrong direction.
+            raise
         except Exception as e:
-            print(f"  SKIP {key}: {e}", flush=True)
+            print(f"  SKIP {key}: {type(e).__name__}: {e}", flush=True)
             continue
         with open(f"data/{key}.pkl", "wb") as f:
             pickle.dump({"X": X, "y": y, "base": base}, f)
@@ -719,7 +725,10 @@ def main():
               f"→ data/{key}.pkl", flush=True)
 
     if not datasets:
-        raise SystemExit("No datasets could be built (check network / yfinance).")
+        raise SystemExit(
+            "No datasets could be built. Every builder raised. If the raw "
+            "caches in data/raw_*.pkl exist, this is not a network problem -- "
+            "check the exception types printed above.")
 
     if PREP_ONLY:
         print("\nPREP_ONLY=True — datasets saved, skipping ablation.", flush=True)

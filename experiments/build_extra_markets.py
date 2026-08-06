@@ -65,8 +65,13 @@ if __name__ == "__main__":
         cache = f"data/raw_{name}_prices.pkl"
         try:
             prices = download(tickers, start, cache)
+        except ModuleNotFoundError:
+            # A missing package is a broken environment, not an unavailable
+            # dataset. Swallowing it as a SKIP hid `No module named pyarrow`
+            # behind a misleading "check network" message four stages later.
+            raise
         except Exception as e:
-            print(f"  SKIP {name}: {e}")
+            print(f"  SKIP {name}: {type(e).__name__}: {e}")
             continue
         print(f"  {name:<12} prices {prices.shape}  {prices.index.min().date()} "
               f"-> {prices.index.max().date()}  tickers={list(prices.columns)}")
