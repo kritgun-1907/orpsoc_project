@@ -76,21 +76,38 @@ N_JOBS      = default_workers()
 # numbers (guardrail G3). Set to False to always recompute from scratch.
 USE_CHECKPOINTS = True
 
+# ── Benchmark version ────────────────────────────────────────────────────────
+# "v2" is the corrected benchmark (make_benchmark_v2.py): five INDEPENDENT
+# signal latents instead of five noisy copies of one, noise features drawn from
+# the same process as the signal so the two are separable only through y, and
+# L3 carrying genuine CONCEPT drift rather than a covariate shift that leaves
+# the decision boundary stationary.
+#
+# "v1" reproduces the original step1 datasets. v1 and v2 numbers are NOT
+# comparable -- the signal structure differs entirely -- so the output filename
+# carries the version and step8 is pointed at whichever you want to analyse.
+BENCHMARK_VERSION = "v2"        # "v1" | "v2"
+_P = "" if BENCHMARK_VERSION == "v1" else "v2_"
+
 LEVELS = {
-    "null":          "Level 0 — True Null",
-    "white_noise":   "Level 1 — White Noise",
-    "ar1":           "Level 2 — AR(1) Stationary",
-    "drift":         "Level 3 — Drift",
-    "regime_switch": "Level 4 — Regime Switch",
+    f"{_P}null":          f"Level 0 — True Null ({BENCHMARK_VERSION})",
+    f"{_P}white_noise":   f"Level 1 — White Noise ({BENCHMARK_VERSION})",
+    f"{_P}ar1":           f"Level 2 — AR(1) Stationary ({BENCHMARK_VERSION})",
+    f"{_P}drift":         f"Level 3 — Drift ({BENCHMARK_VERSION})",
+    f"{_P}regime_switch": f"Level 4 — Regime Switch ({BENCHMARK_VERSION})",
 }
 
 # Row index of the known structural break per level, or None if stationary.
 # Consumed by orpsoc_utils.classify_folds() to label folds pre/straddle/post
 # from the ACTUAL break location instead of assuming it sits at N_SPLITS // 2.
 SWITCH_INDEX = {
-    "null": None, "white_noise": None, "ar1": None, "drift": None,
-    "regime_switch": 500,
+    f"{_P}null": None, f"{_P}white_noise": None, f"{_P}ar1": None,
+    f"{_P}drift": None, f"{_P}regime_switch": 500,
 }
+
+# Output is versioned so a v2 run cannot silently overwrite v1 numbers.
+RESULTS_PATH = ("results/step7_ablation.json" if BENCHMARK_VERSION == "v1"
+                else f"results/step7_ablation_{BENCHMARK_VERSION}.json")
 
 # ── Fitness compactness weight (work-order: expose theta) ────────────────────
 # Fitness = THETA * AUC + (1 - THETA) * (1 - k/N).
@@ -133,7 +150,8 @@ CONFIG = {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS, "max_iter": MAX_ITER,
           "theta": THETA, "theta_sweep": THETA_SWEEP,
           "apsoll_patience": APSOLL_PATIENCE,
           "apsoll_rearm_after": APSOLL_REARM_AFTER,
-          "levels": list(LEVELS)}
+          "levels": list(LEVELS),
+          "benchmark_version": BENCHMARK_VERSION}
 PROV   = provenance(CONFIG, ["orpsoc_utils.py", "step7_ablation.py"])
 
 print("=" * 65)
@@ -883,8 +901,8 @@ def to_json(obj):
 
 save["full_results"] = to_json(ALL_RESULTS)
 
-with open("results/step7_ablation.json", "w") as f:
+with open(RESULTS_PATH, "w") as f:
     json.dump(save, f, indent=2)
-print("\nSaved: results/step7_ablation.json")
+print(f"\nSaved: {RESULTS_PATH}")
 print(f"Total time: {(time.time()-t_global)/60:.1f} min")
 print("\nNext: run step8_results.py")

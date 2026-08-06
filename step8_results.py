@@ -50,7 +50,15 @@ print("  STEP 8: Final Analysis & Paper Plots")
 print("=" * 65)
 print()
 
-with open("results/step7_ablation.json") as f:
+# Default to the v2 ablation when present, else the v1 file. Override with:
+#     python step8_results.py results/step7_ablation.json
+import sys as _sys, os as _os
+_default = ("results/step7_ablation_v2.json"
+            if _os.path.exists("results/step7_ablation_v2.json")
+            else "results/step7_ablation.json")
+ABLATION_PATH = _sys.argv[1] if len(_sys.argv) > 1 else _default
+print(f"  reading {ABLATION_PATH}")
+with open(ABLATION_PATH) as f:
     data = json.load(f)
 
 cfg     = data["config"]
