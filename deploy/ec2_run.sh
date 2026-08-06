@@ -117,7 +117,10 @@ fetch_down() {
   echo
   echo "fetching results <- instance"
   mkdir -p "$REPO_ROOT/ec2_results"
-  rsync -az --info=stats1 -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
+  # Checkpoints stay on the instance: they are large, regenerable, and only
+  # useful there -- they exist so an interrupted run can resume in place.
+  rsync -az --info=stats1 --exclude 'checkpoints/' \
+    -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
     "$TARGET:$REMOTE_DIR/results/"  "$REPO_ROOT/ec2_results/results/" || true
   rsync -az -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
     "$TARGET:$REMOTE_DIR/plots/"    "$REPO_ROOT/ec2_results/plots/"   || true

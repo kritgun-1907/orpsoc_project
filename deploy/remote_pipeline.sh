@@ -96,7 +96,12 @@ stage 11_step8_results  python3 step8_results.py
 stage 12_step9_realdata python3 step9_real_data.py
 
 # ── 6. analyses ───────────────────────────────────────────────────────────────
-stage 13_jaccard_null   python3 orpsoc_jaccard.py results/step7_ablation.json
+# Point the analysis at whichever ablation the run actually produced -- step7
+# writes results/step7_ablation_v2.json when BENCHMARK_VERSION="v2".
+ABLATION_JSON="$(ls -1t results/step7_ablation*.json 2>/dev/null | head -1)"
+[ -n "$ABLATION_JSON" ] || fail "no step7 ablation output found"
+log "analysing $ABLATION_JSON"
+stage 13_jaccard_null   python3 orpsoc_jaccard.py "$ABLATION_JSON"
 stage 14_adaptation     python3 experiments/ff_adaptation.py || true
 stage 15_compass        python3 experiments/compass_ceiling.py || true
 

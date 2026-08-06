@@ -35,6 +35,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 from joblib import Parallel, delayed
+from functools import partial
 os.makedirs("results", exist_ok=True)
 os.makedirs("plots",   exist_ok=True)
 
@@ -104,6 +105,19 @@ SWITCH_INDEX = {
     f"{_P}null": None, f"{_P}white_noise": None, f"{_P}ar1": None,
     f"{_P}drift": None, f"{_P}regime_switch": 500,
 }
+
+# ── Secondary pass: repeat the ablation with a LOW-CAPACITY classifier ───────
+# LightGBM is an embedded feature selector, so an external wrapper competes with
+# machinery the model already has -- measured on real data, the same 5-feature
+# subset is worth -0.020 to LightGBM and +0.055 to logistic regression. Running
+# the ablation a second time under LogReg turns "selection does not help" into a
+# quantified statement about classifier capacity.
+#
+# Restricted to the two non-stationary levels, which is where the question
+# bites; the stationary levels add cost without adding evidence. Set to [] to
+# skip the pass entirely. Results are stored under "<level>@logreg" so they sit
+# beside the primary numbers without colliding with them.
+LOGREG_PASS_LEVELS = [f"{_P}drift", f"{_P}regime_switch"]
 
 # Output is versioned so a v2 run cannot silently overwrite v1 numbers.
 RESULTS_PATH = ("results/step7_ablation.json" if BENCHMARK_VERSION == "v1"
@@ -253,15 +267,37 @@ class SimpleHMM:
 #  CONDITION 1 — BASELINE (all features, LightGBM)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed):
-    """No feature selection — use all features. LightGBM consistent with PSO conditions."""
+def make_model(kind, seed=42):
+    """
+    Classifier factory for the ablation.
+
+    A module-level function rather than a lambda because joblib has to pickle it
+    to reach the worker processes; functools.partial(make_model, "logreg") is
+    picklable, a closure is not.
+
+    "lgbm"   LightGBM — the project baseline. An EMBEDDED feature selector: it
+             evaluates every feature at every split and simply never splits on
+             useless ones, which is why an external wrapper has so little to add.
+    "logreg" Logistic regression — no built-in selection, and sensitive to the
+             collinearity that external selection removes. Measured on real
+             data, the same 5-feature subset is worth -0.020 to LightGBM and
+             +0.055 to LogReg. Running the ablation under both turns "selection
+             does not help" into a statement about classifier capacity.
+    """
+    if kind == "logreg":
+        from sklearn.linear_model import LogisticRegression
+        return LogisticRegression(max_iter=200)
+    return LGBMClassifier(n_estimators=100, num_leaves=31, learning_rate=0.1,
+                          verbosity=-1, random_state=seed, n_jobs=1)
+
+
+def run_baseline(X_tr, y_tr, X_te, y_te, feat_names, seed, model="lgbm"):
+    """No feature selection — use all features, with the pass's classifier."""
     try:
         pipe = Pipeline([
             ("imp",    SimpleImputer(strategy="mean")),
             ("scaler", StandardScaler()),
-            ("model",  LGBMClassifier(n_estimators=100, num_leaves=31,
-                                      learning_rate=0.1, verbosity=-1,
-                                      random_state=seed, n_jobs=1))
+            ("model",  make_model(model, seed))
         ])
         pipe.fit(X_tr, y_tr)
         auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:,1])
@@ -331,7 +367,8 @@ ALL_RESULTS = {}
 t_global   = time.time()
 
 
-def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
+def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None,
+                 model="lgbm"):
     """
     Run ONE complete walk-forward sequence for one seed of one level.
 
@@ -393,6 +430,8 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
             N_explore=max(5, MAX_ITER // 4), lam=0.1,
             apsoll_patience=APSOLL_PATIENCE,
             apsoll_rearm_after=APSOLL_REARM_AFTER,
+            model_factory=(None if model == "lgbm"
+                           else partial(make_model, model)),
         )
 
         # Ground-truth signal features for recall scoring.
@@ -470,7 +509,7 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None):
         # ── Condition 1: Baseline ──────────────────────────────────────
         t0  = time.time()
         r1  = run_baseline(X_tr, y_tr, X_te, y_te, feat_names,
-                           seed + fold_idx * 1000)
+                           seed + fold_idx * 1000, model=model)
         seed_results["baseline"]["fold_aucs"].append(r1["auc"])
         seed_results["baseline"]["fold_selected"].append(r1["selected"])
         seed_results["baseline"]["runtimes"].append(time.time() - t0)
@@ -643,13 +682,15 @@ STORE = CheckpointStore("results/checkpoints", "step7", PROV,
                         enabled=USE_CHECKPOINTS)
 
 
-def _seed_or_checkpoint(level_key, seed, signal_r1, signal_r2, theta):
+def _seed_or_checkpoint(level_key, seed, signal_r1, signal_r2, theta,
+                        model="lgbm"):
     """Return a cached seed result if one exists, else compute and cache it."""
-    unit = f"{level_key}_seed{seed:03d}_th{theta:.2f}"
+    unit = f"{level_key}_seed{seed:03d}_th{theta:.2f}_{model}"
     cached = STORE.load(unit)
     if cached is not None:
         return cached
-    result = run_one_seed(level_key, seed, signal_r1, signal_r2, theta=theta)
+    result = run_one_seed(level_key, seed, signal_r1, signal_r2, theta=theta,
+                          model=model)
     STORE.save(unit, result)
     return result
 
@@ -705,6 +746,52 @@ for theta in THETAS:
         "signal_r2":  signal_r2,
         "conditions": level_results,
     }
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SECONDARY PASS — the same ablation under a low-capacity classifier
+# ══════════════════════════════════════════════════════════════════════════════
+#  Runs only AFTER the primary LightGBM pass has completed, on the levels named
+#  in LOGREG_PASS_LEVELS. Identical folds, identical seeds, identical
+#  conditions -- the ONLY thing that changes is the classifier used for both the
+#  PSO fitness and the final scoring, so any difference is attributable to
+#  classifier capacity rather than to the protocol.
+# ══════════════════════════════════════════════════════════════════════════════
+
+for level_key in LOGREG_PASS_LEVELS:
+    if level_key not in LEVELS:
+        print(f"\n  [logreg pass] skipping {level_key}: not in LEVELS", flush=True)
+        continue
+    label = f"{LEVELS[level_key]} · LogReg"
+    print(f"\n{'─' * 65}")
+    print(f"  {label}")
+    print(f"{'─' * 65}", flush=True)
+
+    with open(f"data/{level_key}.pkl", "rb") as f:
+        _cols = list(pickle.load(f)["X"].columns)
+    signal_all = [c for c in _cols if c.startswith("signal_")]
+    signal_r1  = [c for c in signal_all if c in ["signal_0", "signal_1", "signal_2"]]
+    signal_r2  = [c for c in signal_all if c in ["signal_3", "signal_4"]]
+
+    units = [f"{level_key}_seed{s:03d}_th{THETA:.2f}_logreg" for s in range(N_SEEDS)]
+    if USE_CHECKPOINTS:
+        print(f"  checkpoints: {STORE.summary(units)}", flush=True)
+
+    seed_results_list = Parallel(n_jobs=N_JOBS, backend="loky")(
+        delayed(_seed_or_checkpoint)(level_key, seed, signal_r1, signal_r2,
+                                     THETA, "logreg")
+        for seed in range(N_SEEDS)
+    )
+    ALL_RESULTS[f"{level_key}@logreg"] = {
+        "level_name": label,
+        "signal_r1":  signal_r1,
+        "signal_r2":  signal_r2,
+        "classifier": "logreg",
+        "conditions": {cond: [sr[cond] for sr in seed_results_list]
+                       for cond in CONDITIONS},
+    }
+    print(f"  {label} done — elapsed {(time.time() - t_global) / 60:.1f} min",
+          flush=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SUMMARISE AND SAVE
