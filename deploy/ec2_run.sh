@@ -72,6 +72,9 @@ done
 
 # ── preflight ─────────────────────────────────────────────────────────────────
 command -v rsync >/dev/null || { echo "rsync not found" >&2; exit 1; }
+# macOS ships rsync 2.6.9 (2006; Apple froze it at the last GPLv2 release), which
+# rejects modern flags like --info=. Every flag used below is understood by both
+# that and rsync 3.x, so no version gate is needed -- but keep it that way.
 command -v ssh   >/dev/null || { echo "ssh not found" >&2; exit 1; }
 
 if [ -n "$INSTANCE_ID" ] && [ -z "$HOST" ]; then
@@ -126,7 +129,7 @@ echo "repo     : $REPO_ROOT"
 sync_up() {
   echo
   echo "syncing repo -> instance"
-  rsync -az --info=stats1 -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
+  rsync -az --stats -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
     --exclude '.git/' --exclude '__pycache__/' --exclude '*.pyc' \
     --exclude 'logs/' --exclude 'results/checkpoints/' \
     --exclude 'data/checkpoint_*' --exclude '*STALE*' \
@@ -142,7 +145,7 @@ fetch_down() {
   mkdir -p "$REPO_ROOT/ec2_results"
   # Checkpoints stay on the instance: they are large, regenerable, and only
   # useful there -- they exist so an interrupted run can resume in place.
-  rsync -az --info=stats1 --exclude 'checkpoints/' \
+  rsync -az --stats --exclude 'checkpoints/' \
     -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
     "$TARGET:$REMOTE_DIR/results/"  "$REPO_ROOT/ec2_results/results/" || true
   rsync -az -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
