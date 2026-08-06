@@ -86,7 +86,21 @@ class CriterionBank:
     """
 
     def __init__(self, X_tr, y_tr, feat_names, k_blocks=4, n_boot=12,
-                 block_frac=0.10, regime_state=None, seed=0, pi_thresh=0.6):
+                 block_frac=0.10, regime_state=None, seed=0, pi_thresh=0.6,
+                 criteria=None):
+        """
+        criteria : optional list of the criterion names that will actually be
+            requested. The moving-block bootstrap and the Meinshausen-Buhlmann
+            selection frequencies cost n_boot model fits to build and are used
+            only by mb_perf / mb_stability / mb_thresh. When a caller asks for,
+            say, median_k alone, building them is pure waste -- and inside a PSO
+            run the bank is rebuilt once per condition per fold, so the waste
+            multiplies. Passing `criteria` skips whatever is not needed; leaving
+            it None builds everything (backward compatible).
+        """
+        _want = set(criteria) if criteria else None
+        _need_boot = (_want is None
+                      or bool(_want & {"mb_perf", "mb_stability", "mb_thresh"}))
         cols = list(feat_names)
         self.n_feat = len(cols)
         self.pi_thresh = pi_thresh
@@ -112,7 +126,7 @@ class CriterionBank:
         # ── moving-block bootstrap resamples (mb_perf) ──────────────────────
         blk = max(5, int(n * block_frac))
         self._boot = []
-        for _ in range(n_boot):
+        for _ in range(n_boot if _need_boot else 0):
             ix = _moving_block_indices(n, blk, rng)
             c = int(len(ix) * 0.75)
             self._boot.append((A[ix[:c]], y[ix[:c]], A[ix[c:]], y[ix[c:]]))
@@ -123,7 +137,9 @@ class CriterionBank:
         top_m = max(3, self.n_feat // 5)
         counts = np.zeros(self.n_feat)
         used = 0
-        for (Ab, yb, _, _) in self._boot:
+        _freq_src = self._boot if (_want is None or
+                                   bool(_want & {"mb_stability", "mb_thresh"})) else []
+        for (Ab, yb, _, _) in _freq_src:
             if len(np.unique(yb)) < 2:
                 continue
             try:

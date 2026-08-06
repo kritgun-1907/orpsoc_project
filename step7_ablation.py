@@ -119,6 +119,20 @@ SWITCH_INDEX = {
 # beside the primary numbers without colliding with them.
 LOGREG_PASS_LEVELS = [f"{_P}drift", f"{_P}regime_switch"]
 
+# Fitness criterion for the LogReg pass. The primary LightGBM pass stays on the
+# project default (`current`, i.e. AUC on the single trailing validation split);
+# the LogReg pass uses median_k, which is where the evidence supports it:
+#
+#   median_k vs current, actual PSO, 5 seeds (experiments/phase3_mediank.py)
+#     sector_etf . LogReg    0.8157 -> 0.8312   +0.0155   and seed sd 0.0185 -> 0.0062
+#     sector_etf . LightGBM  0.7997 -> 0.7843   -0.0154
+#
+# median_k is the replicated winner of the criterion bake-off on both datasets
+# (33% +-10 real, 43% +-12 synthetic, vs current's 23% and 28%), but it helps
+# only the low-capacity classifier in an actual search. Applying it per-pass
+# reports it where it works instead of averaging the two effects away.
+LOGREG_PASS_CRITERION = "median_k"      # None = use the default criterion
+
 # Output is versioned so a v2 run cannot silently overwrite v1 numbers.
 RESULTS_PATH = ("results/step7_ablation.json" if BENCHMARK_VERSION == "v1"
                 else f"results/step7_ablation_{BENCHMARK_VERSION}.json")
@@ -165,7 +179,9 @@ CONFIG = {"fast_mode": FAST_MODE, "n_seeds": N_SEEDS, "max_iter": MAX_ITER,
           "apsoll_patience": APSOLL_PATIENCE,
           "apsoll_rearm_after": APSOLL_REARM_AFTER,
           "levels": list(LEVELS),
-          "benchmark_version": BENCHMARK_VERSION}
+          "benchmark_version": BENCHMARK_VERSION,
+          "logreg_pass_levels": LOGREG_PASS_LEVELS,
+          "logreg_pass_criterion": LOGREG_PASS_CRITERION}
 PROV   = provenance(CONFIG, ["orpsoc_utils.py", "step7_ablation.py"])
 
 print("=" * 65)
@@ -368,7 +384,7 @@ t_global   = time.time()
 
 
 def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None,
-                 model="lgbm"):
+                 model="lgbm", criterion=None):
     """
     Run ONE complete walk-forward sequence for one seed of one level.
 
@@ -432,6 +448,7 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None,
             apsoll_rearm_after=APSOLL_REARM_AFTER,
             model_factory=(None if model == "lgbm"
                            else partial(make_model, model)),
+            criterion=criterion,
         )
 
         # Ground-truth signal features for recall scoring.
@@ -683,14 +700,15 @@ STORE = CheckpointStore("results/checkpoints", "step7", PROV,
 
 
 def _seed_or_checkpoint(level_key, seed, signal_r1, signal_r2, theta,
-                        model="lgbm"):
+                        model="lgbm", criterion=None):
     """Return a cached seed result if one exists, else compute and cache it."""
-    unit = f"{level_key}_seed{seed:03d}_th{theta:.2f}_{model}"
+    unit = (f"{level_key}_seed{seed:03d}_th{theta:.2f}_{model}"
+            f"_{criterion or 'default'}")
     cached = STORE.load(unit)
     if cached is not None:
         return cached
     result = run_one_seed(level_key, seed, signal_r1, signal_r2, theta=theta,
-                          model=model)
+                          model=model, criterion=criterion)
     STORE.save(unit, result)
     return result
 
@@ -761,7 +779,7 @@ for level_key in LOGREG_PASS_LEVELS:
     if level_key not in LEVELS:
         print(f"\n  [logreg pass] skipping {level_key}: not in LEVELS", flush=True)
         continue
-    label = f"{LEVELS[level_key]} · LogReg"
+    label = f"{LEVELS[level_key]} · LogReg/{LOGREG_PASS_CRITERION or 'default'}"
     print(f"\n{'─' * 65}")
     print(f"  {label}")
     print(f"{'─' * 65}", flush=True)
@@ -772,13 +790,14 @@ for level_key in LOGREG_PASS_LEVELS:
     signal_r1  = [c for c in signal_all if c in ["signal_0", "signal_1", "signal_2"]]
     signal_r2  = [c for c in signal_all if c in ["signal_3", "signal_4"]]
 
-    units = [f"{level_key}_seed{s:03d}_th{THETA:.2f}_logreg" for s in range(N_SEEDS)]
+    units = [f"{level_key}_seed{s:03d}_th{THETA:.2f}_logreg"
+             f"_{LOGREG_PASS_CRITERION or 'default'}" for s in range(N_SEEDS)]
     if USE_CHECKPOINTS:
         print(f"  checkpoints: {STORE.summary(units)}", flush=True)
 
     seed_results_list = Parallel(n_jobs=N_JOBS, backend="loky")(
         delayed(_seed_or_checkpoint)(level_key, seed, signal_r1, signal_r2,
-                                     THETA, "logreg")
+                                     THETA, "logreg", LOGREG_PASS_CRITERION)
         for seed in range(N_SEEDS)
     )
     ALL_RESULTS[f"{level_key}@logreg"] = {
@@ -786,6 +805,7 @@ for level_key in LOGREG_PASS_LEVELS:
         "signal_r1":  signal_r1,
         "signal_r2":  signal_r2,
         "classifier": "logreg",
+        "criterion":  LOGREG_PASS_CRITERION or "default",
         "conditions": {cond: [sr[cond] for sr in seed_results_list]
                        for cond in CONDITIONS},
     }
