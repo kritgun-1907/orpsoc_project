@@ -17,6 +17,8 @@
 set -euo pipefail
 
 REPO="${REPO:-$HOME/orpsoc_research}"
+VENV="${VENV:-$HOME/orpsoc-venv}"
+PY="$VENV/bin/python"
 LOG_DIR="$REPO/logs"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -45,20 +47,45 @@ stage() {
 }
 
 log "environment"
-python3 -V
+"$PY" -V 2>/dev/null || python3 -V
 echo "  vCPUs=$NPROC   ORPSOC_N_JOBS=$ORPSOC_N_JOBS"
 echo "  free memory: $(free -g 2>/dev/null | awk '/^Mem:/{print $7"Gi"}' || echo n/a)"
 echo "  disk: $(df -h "$REPO" | awk 'NR==2{print $4" free of "$2}')"
 
 # ── 1. dependencies ───────────────────────────────────────────────────────────
+# Ubuntu 24.04 specifics, all three of which will hard-fail a naive setup:
+#   * pip is not installed at all
+#   * /usr/lib/python3.12/EXTERNALLY-MANAGED (PEP 668) blocks `pip install`
+#     into the system interpreter, so a venv is required rather than optional
+#   * libgomp is absent, and LightGBM will not even import without it
+# Amazon Linux needs none of this, hence the branch on the package manager.
 if [ ! -f "$REPO/.deps_installed" ]; then
-  stage 01_deps python3 -m pip install --quiet --upgrade pip
-  stage 02_reqs python3 -m pip install --quiet -r requirements.txt
-  python3 -m pip install --quiet pypdf joblib scipy || true
+  log "01_system_packages"
+  if command -v apt-get >/dev/null; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+      python3-venv python3-dev build-essential libgomp1 \
+      >"$LOG_DIR/${STAMP}_01_system.log" 2>&1 || fail "apt-get install"
+  elif command -v dnf >/dev/null; then
+    sudo dnf install -y -q python3-pip python3-devel gcc libgomp \
+      >"$LOG_DIR/${STAMP}_01_system.log" 2>&1 || fail "dnf install"
+  fi
+  ldconfig -p | grep -q libgomp || fail "libgomp still missing -- LightGBM cannot import"
+
+  log "02_venv"
+  [ -x "$PY" ] || python3 -m venv "$VENV" || fail "could not create venv at $VENV"
+  stage 03_pip  "$PY" -m pip install --quiet --upgrade pip setuptools wheel
+  stage 04_reqs "$PY" -m pip install --quiet -r requirements.txt
+  "$PY" -m pip install --quiet joblib scipy pypdf || true
+
+  # Fail here rather than 40 minutes into step7.
+  stage 05_import_check "$PY" -c "import numpy, pandas, sklearn, lightgbm, joblib, scipy; \
+import lightgbm as l; print('  lightgbm', l.__version__, 'imports cleanly')"
   touch "$REPO/.deps_installed"
 else
   log "dependencies already installed (delete .deps_installed to force)"
 fi
+[ -x "$PY" ] || fail "venv python missing at $PY"
 
 # ── 2. regenerate every derived dataset from the raw caches ───────────────────
 # The raw_*.pkl files are shipped from the laptop rather than re-downloaded:
@@ -69,31 +96,31 @@ for f in raw_sector_prices raw_fama_french raw_bonds_prices raw_commodities_pric
   [ -f "data/$f.pkl" ] || fail "missing data/$f.pkl -- the sync did not include the raw caches"
 done
 
-stage 03_synth_v1  python3 step1_generate_data.py
-stage 04_null      python3 make_level0_null.py
-stage 05_synth_v2  python3 make_benchmark_v2.py
-stage 06_markets   python3 experiments/build_extra_markets.py
+stage 03_synth_v1  "$PY" step1_generate_data.py
+stage 04_null      "$PY" make_level0_null.py
+stage 05_synth_v2  "$PY" make_benchmark_v2.py
+stage 06_markets   "$PY" experiments/build_extra_markets.py
 # step9 in PREP_ONLY mode rebuilds sector_etf + fama_french from the raw caches.
-stage 07_realdata  env ORPSOC_PREP_ONLY=1 python3 - <<'PY'
+stage 07_realdata  env ORPSOC_PREP_ONLY=1 "$PY" - <<'PYEOF'
 import re
 src = open("step9_real_data.py").read()
 src = re.sub(r'^PREP_ONLY\s*=.*$', 'PREP_ONLY   = True', src, count=1, flags=re.M)
 exec(compile(src, "step9_prep", "exec"), {"__name__": "__main__"})
-PY
+PYEOF
 
 # ── 3. INTEGRITY GATE — before anything expensive ─────────────────────────────
 # A stale dataset silently invalidates everything downstream. This has already
 # happened once on this project (fama_french held labels from a superseded
 # target definition and agreed with its own base only 47% of the time).
-stage 08_verify_data python3 experiments/verify_data.py
+stage 08_verify_data "$PY" experiments/verify_data.py
 
 # ── 4. engine correctness gate ────────────────────────────────────────────────
-stage 09_equivalence python3 test_equivalence.py
+stage 09_equivalence "$PY" test_equivalence.py
 
 # ── 5. the expensive runs ─────────────────────────────────────────────────────
-stage 10_step7_ablation python3 step7_ablation.py
-stage 11_step8_results  python3 step8_results.py
-stage 12_step9_realdata python3 step9_real_data.py
+stage 10_step7_ablation "$PY" step7_ablation.py
+stage 11_step8_results  "$PY" step8_results.py
+stage 12_step9_realdata "$PY" step9_real_data.py
 
 # ── 6. analyses ───────────────────────────────────────────────────────────────
 # Point the analysis at whichever ablation the run actually produced -- step7
@@ -101,9 +128,9 @@ stage 12_step9_realdata python3 step9_real_data.py
 ABLATION_JSON="$(ls -1t results/step7_ablation*.json 2>/dev/null | head -1)"
 [ -n "$ABLATION_JSON" ] || fail "no step7 ablation output found"
 log "analysing $ABLATION_JSON"
-stage 13_jaccard_null   python3 orpsoc_jaccard.py "$ABLATION_JSON"
-stage 14_adaptation     python3 experiments/ff_adaptation.py || true
-stage 15_compass        python3 experiments/compass_ceiling.py || true
+stage 13_jaccard_null   "$PY" orpsoc_jaccard.py "$ABLATION_JSON"
+stage 14_adaptation     "$PY" experiments/ff_adaptation.py || true
+stage 15_compass        "$PY" experiments/compass_ceiling.py || true
 
 # ── 7. package ────────────────────────────────────────────────────────────────
 log "packaging"

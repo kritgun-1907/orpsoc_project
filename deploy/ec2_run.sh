@@ -18,7 +18,7 @@
 # ==============================================================================
 set -euo pipefail
 
-HOST=""; KEY=""; INSTANCE_ID=""; USER_NAME="${EC2_USER:-ec2-user}"
+HOST=""; KEY=""; INSTANCE_ID=""; USER_NAME="${EC2_USER:-}"
 REMOTE_DIR="orpsoc_research"
 MODE="full"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
@@ -86,6 +86,29 @@ fi
 [ -n "$KEY"  ] || { echo "need --key" >&2; usage; exit 1; }
 [ -f "$KEY"  ] || { echo "key not found: $KEY" >&2; exit 1; }
 chmod 600 "$KEY" 2>/dev/null || true
+
+
+# The correct SSH user depends on the AMI: Ubuntu images use `ubuntu`, Amazon
+# Linux uses `ec2-user`, Debian `admin`. Guessing wrong yields a bare
+# "Permission denied (publickey)" that looks identical to a bad key, so probe
+# instead of assuming. Override with EC2_USER to skip the probe.
+detect_user() {
+  local host="$1" u
+  if [ -n "${USER_NAME:-}" ]; then echo "$USER_NAME"; return; fi
+  for u in ubuntu ec2-user admin fedora centos root; do
+    if ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+           -o ConnectTimeout=8 "$u@$host" 'exit 0' 2>/dev/null; then
+      echo "$u"; return
+    fi
+  done
+  echo "could not authenticate as any standard AMI user -- check the key" >&2
+  exit 1
+}
+
+if [ -z "$USER_NAME" ]; then
+  USER_NAME="$(detect_user "$HOST")"
+  echo "ssh user  : $USER_NAME (auto-detected from the AMI)"
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30)

@@ -19,7 +19,7 @@ set -euo pipefail
 INSTANCE_ID="${ORPSOC_INSTANCE_ID:-i-02415f8ffa4e0da4d}"
 REGION="${AWS_REGION:-us-east-1}"
 KEY="${ORPSOC_SSH_KEY:-$HOME/.ssh/orpsoc.pem}"
-USER_NAME="${EC2_USER:-ec2-user}"
+USER_NAME="${EC2_USER:-}"
 REMOTE_DIR="orpsoc_research"
 
 command -v aws >/dev/null || { echo "aws cli not installed" >&2; exit 1; }
@@ -35,13 +35,32 @@ need_running() {
   [ "$s" = "running" ] || { echo "instance is '$s' -- run: $0 start" >&2; exit 1; }
 }
 
+
+# The correct SSH user depends on the AMI: Ubuntu images use `ubuntu`, Amazon
+# Linux uses `ec2-user`, Debian `admin`. Guessing wrong yields a bare
+# "Permission denied (publickey)" that looks identical to a bad key, so probe
+# instead of assuming. Override with EC2_USER to skip the probe.
+detect_user() {
+  local host="$1" u
+  if [ -n "${USER_NAME:-}" ]; then echo "$USER_NAME"; return; fi
+  for u in ubuntu ec2-user admin fedora centos root; do
+    if ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+           -o ConnectTimeout=8 "$u@$host" 'exit 0' 2>/dev/null; then
+      echo "$u"; return
+    fi
+  done
+  echo "could not authenticate as any standard AMI user -- check the key" >&2
+  exit 1
+}
+
 ssh_to() {
   need_running
   local host; host="$(dns)"
   [ -n "$host" ] && [ "$host" != "None" ] || { echo "no public DNS yet" >&2; exit 1; }
   [ -f "$KEY" ] || { echo "ssh key not found: $KEY  (set ORPSOC_SSH_KEY)" >&2; exit 1; }
+  local u; u="$(detect_user "$host")"
   ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 \
-      "${USER_NAME}@${host}" "$@"
+      "${u}@${host}" "$@"
 }
 
 case "${1:-status}" in
