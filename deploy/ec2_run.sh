@@ -170,15 +170,32 @@ esac
 sync_up
 
 echo
+# Two things this deliberately does NOT do:
+#
+#   ssh host bash -lc "multi-line script"   -- ssh concatenates its arguments
+#   into ONE command string, so the quoting is lost and `bash -lc` ends up with
+#   no argument at all ("option requires an argument"). Send one simple command
+#   per call instead.
+#
+#   pgrep -f remote_pipeline.sh             -- the ssh command line ITSELF
+#   contains that string, so pgrep matches its own invocation and the guard
+#   fires every time. The [r]emote form stops the pattern matching itself.
+if "${SSH[@]}" "$TARGET" "pgrep -f '[r]emote_pipeline[.]sh' >/dev/null 2>&1"; then
+  echo "a pipeline is already running on this instance -- use --attach" >&2
+  exit 1
+fi
+
 echo "starting pipeline under setsid (survives SSH disconnect)"
-"${SSH[@]}" "$TARGET" bash -lc "
-  cd $REMOTE_DIR &&
-  if pgrep -f remote_pipeline.sh >/dev/null; then
-    echo 'a pipeline is already running on this instance -- use --attach'; exit 1
-  fi &&
-  setsid nohup ./deploy/remote_pipeline.sh > pipeline.out 2>&1 < /dev/null &
-  sleep 2; echo 'started'
-"
+"${SSH[@]}" "$TARGET" "cd $REMOTE_DIR && setsid nohup ./deploy/remote_pipeline.sh > pipeline.out 2>&1 < /dev/null & sleep 3"
+
+# Confirm it really came up rather than assuming.
+if "${SSH[@]}" "$TARGET" "pgrep -f '[r]emote_pipeline[.]sh' >/dev/null 2>&1"; then
+  echo "started."
+else
+  echo "pipeline did not stay up. Last output:" >&2
+  "${SSH[@]}" "$TARGET" "tail -20 $REMOTE_DIR/pipeline.out 2>/dev/null || echo '(no pipeline.out)'" >&2
+  exit 1
+fi
 
 echo
 echo "streaming log -- Ctrl-C detaches WITHOUT stopping the run"
