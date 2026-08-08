@@ -19,6 +19,24 @@ Run with:
     python step7_ablation.py
 """
 
+# ── import guard ─────────────────────────────────────────────────────────────
+# This file is a SCRIPT, not a module. It executes its whole pipeline at module
+# level, so `import step7_ablation` runs the entire thing as a side effect --
+# for step7_ablation that is a 4-hour ablation triggered by an innocent-looking
+# import. Fail loudly instead.
+#
+# `globals().get("__name__", ...)` rather than a bare `__name__`: helpers are
+# reused by exec'ing the section above a marker into a fresh namespace (see
+# experiments/apsoll_sweep.py), and that namespace has no __name__ at all.
+if globals().get("__name__", "__main__") != "__main__":
+    raise ImportError(
+        "step7_ablation.py is a script, not an importable module -- importing it would "
+        "execute the full pipeline. To reuse a helper, exec the section above "
+        "the main loop into a fresh namespace (see experiments/apsoll_sweep.py)."
+    )
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 import os
 # Pin BLAS/OpenMP BEFORE numpy and lightgbm are imported -- they read these at
 # load time. Without this, each of the N worker processes would additionally
@@ -673,10 +691,20 @@ def run_one_seed(level_key, seed, signal_r1, signal_r2, theta=None,
             seed_results[cond].setdefault("fold_apsoll_max_c", []).append(
                 res.get("apsoll_max_c"))
 
-    # Jaccard stability for this seed (unchanged; was the post-fold-loop block)
+    # Jaccard stability for this seed.
+    #
+    # The pre/post split is now driven by the ACTUAL break, not the midpoint of
+    # the fold-pair list. `fold_phase` already locates the straddle fold from
+    # SWITCH_INDEX; pair i compares folds i and i+1, so the first pair across
+    # which the subset can causally change is the straddle fold's own index.
+    # Stationary levels have no straddle fold and pass None, which makes
+    # feature_stability_ratio label its output as not regime-aware instead of
+    # reporting a meaningless "adaptation drop" on a level with no regime.
+    _straddle = [i for i, p in enumerate(fold_phase) if p["phase"] == "straddle"]
+    _switch_pair = _straddle[0] if _straddle else None
     for cond in CONDITIONS:
         seed_results[cond]["jaccard"] = feature_stability_ratio(
-            seed_results[cond]["fold_selected"])
+            seed_results[cond]["fold_selected"], switch_pair=_switch_pair)
 
     auc_str = "  ".join(
         f"{cond[:3]}={np.mean(seed_results[cond]['fold_aucs']):.3f}"

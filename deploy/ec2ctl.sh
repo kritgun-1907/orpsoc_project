@@ -6,6 +6,8 @@
 #   ./deploy/ec2ctl.sh start       start it and wait until SSH is reachable
 #   ./deploy/ec2ctl.sh dns         print the CURRENT public DNS
 #   ./deploy/ec2ctl.sh ssh         open a shell on it
+#   ./deploy/ec2ctl.sh allowip     re-open port 22 after your ISP rotates your IP
+#   ./deploy/ec2ctl.sh progress    checkpoints completed + last log lines
 #   ./deploy/ec2ctl.sh top         live CPU/memory while a run is going
 #   ./deploy/ec2ctl.sh tail        follow the pipeline log
 #   ./deploy/ec2ctl.sh stop        stop it (keeps the disk, stops the hourly charge)
@@ -40,16 +42,68 @@ need_running() {
 # Linux uses `ec2-user`, Debian `admin`. Guessing wrong yields a bare
 # "Permission denied (publickey)" that looks identical to a bad key, so probe
 # instead of assuming. Override with EC2_USER to skip the probe.
+#
+# Three failures look alike from the outside and must NOT be conflated:
+#   TCP timeout        -> the security group does not allow your current IP
+#   Permission denied  -> wrong key, or the right key for a different AMI user
+#   Connection refused -> sshd is not up yet (instance still booting)
+# This used to report "check the key" for all three, which sent us hunting for a
+# key problem three separate times when the real cause was an ISP IP rotation.
+# So keep ssh's own stderr and classify on it.
 detect_user() {
-  local host="$1" u
+  local host="$1" u out rc last=""
   if [ -n "${USER_NAME:-}" ]; then echo "$USER_NAME"; return; fi
   for u in ubuntu ec2-user admin fedora centos root; do
-    if ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
-           -o ConnectTimeout=8 "$u@$host" 'exit 0' 2>/dev/null; then
-      echo "$u"; return
-    fi
+    out="$(ssh -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+             -o ConnectTimeout=10 "$u@$host" 'exit 0' 2>&1)"; rc=$?
+    [ $rc -eq 0 ] && { echo "$u"; return; }
+    last="$out"
+    # A timeout is a property of the network path, not of the username -- once
+    # one user times out the rest will too, so stop rather than burn 6x10s.
+    case "$last" in *"timed out"*|*"Operation timed out"*) break ;; esac
   done
-  echo "could not authenticate as any standard AMI user -- check the key" >&2
+
+  case "$last" in
+    *"timed out"*)
+      echo "cannot reach $host:22 -- TCP timeout, NOT an authentication failure." >&2
+      echo >&2
+      echo "A security group drops non-matching packets silently, so a blocked" >&2
+      echo "source IP looks exactly like a hung host. Your ISP most likely" >&2
+      echo "rotated your address. Fix with:" >&2
+      echo "    $0 allowip" >&2
+      ;;
+    *"Permission denied"*)
+      echo "reached $host:22 but every standard AMI user was rejected." >&2
+      echo "This one really is credentials: check \$ORPSOC_SSH_KEY (now: $KEY)." >&2
+      ;;
+    *"Connection refused"*)
+      # A RST can come from the far end (sshd down) or from a middlebox on YOUR
+      # network. Many campus/corporate networks refuse all outbound port 22.
+      # Probe a third party that certainly runs sshd to tell the two apart --
+      # otherwise this reports "sshd is not up yet" about a perfectly healthy
+      # instance, which is what it did on the NKN academic network.
+      if ! (ssh -o BatchMode=yes -o StrictHostKeyChecking=no \
+                -o ConnectTimeout=8 git@github.com 'exit' 2>&1 \
+            | grep -qv "Connection refused"); then
+        echo "port 22 is blocked by YOUR network, not by the instance." >&2
+        echo >&2
+        echo "github.com:22 is refused too, and GitHub certainly runs sshd --" >&2
+        echo "so the RST comes from a middlebox on this network. Campus and" >&2
+        echo "corporate networks routinely block outbound SSH." >&2
+        echo >&2
+        echo "Options:  switch to a mobile hotspot, then '$0 allowip'" >&2
+        echo "          or monitor without SSH -- these use HTTPS and still work:" >&2
+        echo "            $0 status" >&2
+      else
+        echo "$host refused port 22 -- sshd is not up yet. Wait for the status" >&2
+        echo "checks to pass:  $0 start" >&2
+      fi
+      ;;
+    *)
+      echo "could not connect to $host:22" >&2
+      echo "  ssh said: $last" >&2
+      ;;
+  esac
   exit 1
 }
 
@@ -114,6 +168,59 @@ case "${1:-status}" in
 
   dns)  dns ;;
   ssh)  shift; ssh_to "$@" ;;
+
+  allowip)
+    # The SSH rule is pinned to a single /32. Consumer ISPs rotate the customer
+    # address (mobile broadband especially), and when yours changes the symptom
+    # is a CONNECTION TIMEOUT, not "permission denied" -- a security group drops
+    # non-matching SYNs silently instead of sending a RST. That looks exactly
+    # like a hung or dead instance, so check this before debugging the run.
+    SG="$(q 'Reservations[].Instances[].SecurityGroups[].GroupId' | awk '{print $1}')"
+    [ -n "$SG" ] && [ "$SG" != "None" ] || { echo "could not resolve security group" >&2; exit 1; }
+    MYIP="$(curl -s --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]')"
+    case "$MYIP" in
+      *.*.*.*) ;;
+      *) echo "could not determine public IP (got '$MYIP')" >&2; exit 1 ;;
+    esac
+    echo "security group : $SG"
+    echo "your public IP : $MYIP"
+
+    # NOTE the [0] rather than []. `SecurityGroups[].IpPermissions[?...]` opens a
+    # projection, and the subsequent .IpRanges[] flatten inside it silently
+    # yields NOTHING -- no error, just an empty result. That made this command
+    # report no existing rules at all on its first outing, so the stale-CIDR
+    # prune below never fired. We always query exactly one group, so index it.
+    SSH_CIDRS_Q='SecurityGroups[0].IpPermissions[?FromPort==`22`].IpRanges[].CidrIp'
+
+    if aws ec2 describe-security-groups --region "$REGION" --group-ids "$SG" \
+         --query "$SSH_CIDRS_Q" \
+         --output text | tr '\t' '\n' | grep -qx "$MYIP/32"; then
+      echo "already allowed -- nothing to do."
+    else
+      aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG" \
+        --protocol tcp --port 22 --cidr "$MYIP/32" >/dev/null
+      echo "added $MYIP/32 -> port 22"
+    fi
+
+    # Old /32s are dead weight: each is a standing grant to an address that has
+    # since been recycled to some other ISP customer. Prune them.
+    stale="$(aws ec2 describe-security-groups --region "$REGION" --group-ids "$SG" \
+      --query "$SSH_CIDRS_Q" \
+      --output text | tr '\t' '\n' | grep -v "^$MYIP/32\$" | grep '/32$' || true)"
+    if [ -n "$stale" ]; then
+      echo "stale single-host rules still present:"
+      echo "$stale" | sed 's/^/  /'
+      printf 'revoke them? [y/N] '
+      read -r ans
+      if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+        echo "$stale" | while read -r c; do
+          [ -n "$c" ] || continue
+          aws ec2 revoke-security-group-ingress --region "$REGION" --group-id "$SG" \
+            --protocol tcp --port 22 --cidr "$c" >/dev/null && echo "  revoked $c"
+        done
+      fi
+    fi
+    ;;
 
   top)
     ssh_to "top -b -n1 | head -20; echo; echo 'orpsoc python processes:';

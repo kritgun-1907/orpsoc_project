@@ -93,6 +93,12 @@ os.makedirs("plots",   exist_ok=True)
 PREP_ONLY   = False    # True = only build+save .pkl datasets, skip ablation
 FAST_MODE   = False     # True = quick directional read; False = paper run
 
+# DECISION (work-order C6, settled 2026-08-07): real-market runs use 20 seeds,
+# synthetic (step7) uses 30. Manuscript §2.4 currently claims 30 everywhere and
+# must be amended to state both numbers -- the executed config is the source of
+# truth, and every real-data result reported so far was produced at 20.
+# Do not "fix" this to 30 to match the manuscript; that would silently
+# invalidate the step9 checkpoints and change published numbers.
 N_SEEDS     = 5  if FAST_MODE else 20
 MAX_ITER    = 20 if FAST_MODE else 60
 N_PARTICLES = 10 if FAST_MODE else 20
@@ -575,7 +581,18 @@ def run_one_seed(X, y, ds_key, seed):
 
 
     for c in CONDITIONS:
-        sr[c]["jaccard"] = feature_stability_ratio(sr[c]["fold_selected"])
+        # switch_pair=None DELIBERATELY. The synthetic levels have exactly one
+        # engineered break, so a pre/post split is well defined there. Real
+        # markets have several documented breaks (BREAKS lists 2001 / 2008 /
+        # 2020), and collapsing a multi-break series into a single "pre" and
+        # "post" mean is not meaningful whichever index you choose. Passing None
+        # makes feature_stability_ratio label its output
+        # "midpoint (NO break supplied -- not regime-aware)", so the field is
+        # self-documenting rather than quietly misleading. The object to analyse
+        # on real data is per_fold_jaccard against break_folds -- see
+        # experiments/tier_a.py A6.
+        sr[c]["jaccard"] = feature_stability_ratio(
+            sr[c]["fold_selected"], switch_pair=None)
 
     mean_auc = {c: np.mean(sr[c]["fold_aucs"]) for c in CONDITIONS}
     print(f"  [{ds_key}] seed {seed + 1}/{N_SEEDS}  " +
@@ -759,6 +776,18 @@ def main():
                     if isinstance(sr["jaccard"], dict) and sr["jaccard"]["per_fold_jaccard"]
                     else 1.0
                     for sr in level_results[c]])),
+                # PER-SEED values, previously thrown away. Only aggregates were
+                # persisted, which made every paired per-seed test on real data
+                # impossible from the JSON alone -- work-order C3 (imp-reinit
+                # delta + paired Wilcoxon) and C5 (per-seed spread) both need
+                # these. step7 has always stored seed_aucs; step9 did not, and
+                # the asymmetry was invisible until someone tried to run the
+                # analysis. The values were recoverable from the checkpoints,
+                # but the results file should stand on its own.
+                "seed_aucs": [float(np.mean(sr["fold_aucs"]))
+                              for sr in level_results[c]],
+                "seed_fold_aucs": [[float(v) for v in sr["fold_aucs"]]
+                                   for sr in level_results[c]],
             }
         out["datasets"][key] = {"break_folds": brk, "conditions": summary}
         plot_recovery(key, level_results, brk)

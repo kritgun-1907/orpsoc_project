@@ -1,0 +1,516 @@
+{
+  "n_draws": 20,
+  "seeds": [
+    9000,
+    9001,
+    9002,
+    9003,
+    9004,
+    9005,
+    9006,
+    9007,
+    9008,
+    9009,
+    9010,
+    9011,
+    9012,
+    9013,
+    9014,
+    9015,
+    9016,
+    9017,
+    9018,
+    9019
+  ],
+  "pct_k": 85,
+  "per_statistic": {
+    "hmm_level": [
+      {
+        "hit4": 2,
+        "hitge": 3,
+        "fp": 14,
+        "null": 13
+      },
+      {
+        "hit4": 1,
+        "hitge": 3,
+        "fp": 12,
+        "null": 8
+      },
+      {
+        "hit4": 3,
+        "hitge": 5,
+        "fp": 13,
+        "null": 13
+      },
+      {
+        "hit4": 1,
+        "hitge": 3,
+        "fp": 12,
+        "null": 10
+      },
+      {
+        "hit4": 3,
+        "hitge": 3,
+        "fp": 14,
+        "null": 11
+      },
+      {
+        "hit4": 1,
+        "hitge": 4,
+        "fp": 11,
+        "null": 10
+      },
+      {
+        "hit4": 3,
+        "hitge": 4,
+        "fp": 14,
+        "null": 11
+      },
+      {
+        "hit4": 1,
+        "hitge": 3,
+        "fp": 14,
+        "null": 11
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 12,
+        "null": 13
+      },
+      {
+        "hit4": 2,
+        "hitge": 4,
+        "fp": 13,
+        "null": 13
+      },
+      {
+        "hit4": 2,
+        "hitge": 4,
+        "fp": 13,
+        "null": 11
+      },
+      {
+        "hit4": 1,
+        "hitge": 2,
+        "fp": 15,
+        "null": 14
+      },
+      {
+        "hit4": 2,
+        "hitge": 5,
+        "fp": 14,
+        "null": 13
+      },
+      {
+        "hit4": 2,
+        "hitge": 3,
+        "fp": 11,
+        "null": 11
+      },
+      {
+        "hit4": 1,
+        "hitge": 3,
+        "fp": 13,
+        "null": 11
+      },
+      {
+        "hit4": 2,
+        "hitge": 4,
+        "fp": 11,
+        "null": 9
+      },
+      {
+        "hit4": 0,
+        "hitge": 4,
+        "fp": 14,
+        "null": 11
+      },
+      {
+        "hit4": 1,
+        "hitge": 5,
+        "fp": 14,
+        "null": 11
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 15,
+        "null": 10
+      },
+      {
+        "hit4": 0,
+        "hitge": 5,
+        "fp": 16,
+        "null": 12
+      }
+    ],
+    "hmm_occupancy": [
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 1,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 0,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 2,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 4,
+        "fp": 0,
+        "null": 1
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 1,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 0,
+        "null": 0
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 2,
+        "null": 1
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 1,
+        "null": 0
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 1,
+        "null": 3
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 2,
+        "null": 1
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 0,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 3,
+        "null": 3
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 0,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 2,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 1,
+        "null": 1
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 4,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 2,
+        "null": 3
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 2,
+        "null": 2
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 1,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 1,
+        "null": 5
+      }
+    ],
+    "ks_twin": [
+      {
+        "hit4": 1,
+        "hitge": 2,
+        "fp": 4,
+        "null": 5
+      },
+      {
+        "hit4": 1,
+        "hitge": 4,
+        "fp": 6,
+        "null": 7
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 4,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 4,
+        "fp": 5,
+        "null": 6
+      },
+      {
+        "hit4": 1,
+        "hitge": 5,
+        "fp": 1,
+        "null": 5
+      },
+      {
+        "hit4": 0,
+        "hitge": 4,
+        "fp": 3,
+        "null": 5
+      },
+      {
+        "hit4": 1,
+        "hitge": 2,
+        "fp": 8,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 6,
+        "null": 5
+      },
+      {
+        "hit4": 1,
+        "hitge": 2,
+        "fp": 7,
+        "null": 8
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 5,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 4,
+        "null": 7
+      },
+      {
+        "hit4": 1,
+        "hitge": 3,
+        "fp": 6,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 4,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 3,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 2,
+        "fp": 6,
+        "null": 4
+      },
+      {
+        "hit4": 0,
+        "hitge": 0,
+        "fp": 7,
+        "null": 4
+      },
+      {
+        "hit4": 1,
+        "hitge": 4,
+        "fp": 6,
+        "null": 6
+      },
+      {
+        "hit4": 0,
+        "hitge": 3,
+        "fp": 5,
+        "null": 7
+      },
+      {
+        "hit4": 0,
+        "hitge": 1,
+        "fp": 4,
+        "null": 4
+      },
+      {
+        "hit4": 1,
+        "hitge": 4,
+        "fp": 7,
+        "null": 7
+      }
+    ],
+    "bocpd": [
+      {
+        "hit4": 3,
+        "hitge": 4,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 16
+      },
+      {
+        "hit4": 3,
+        "hitge": 4,
+        "fp": 20,
+        "null": 19
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 3,
+        "hitge": 3,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 3,
+        "hitge": 5,
+        "fp": 19,
+        "null": 17
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 3,
+        "hitge": 4,
+        "fp": 20,
+        "null": 19
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 18
+      },
+      {
+        "hit4": 3,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 16
+      },
+      {
+        "hit4": 4,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 3,
+        "hitge": 5,
+        "fp": 20,
+        "null": 17
+      },
+      {
+        "hit4": 5,
+        "hitge": 5,
+        "fp": 20,
+        "null": 19
+      }
+    ]
+  }
+}

@@ -26,6 +26,24 @@ Run with:
     python step8_results.py
 """
 
+# ── import guard ─────────────────────────────────────────────────────────────
+# This file is a SCRIPT, not a module. It executes its whole pipeline at module
+# level, so `import step8_results` runs the entire thing as a side effect --
+# for step7_ablation that is a 4-hour ablation triggered by an innocent-looking
+# import. Fail loudly instead.
+#
+# `globals().get("__name__", ...)` rather than a bare `__name__`: helpers are
+# reused by exec'ing the section above a marker into a fresh namespace (see
+# experiments/apsoll_sweep.py), and that namespace has no __name__ at all.
+if globals().get("__name__", "__main__") != "__main__":
+    raise ImportError(
+        "step8_results.py is a script, not an importable module -- importing it would "
+        "execute the full pipeline. To reuse a helper, exec the section above "
+        "the main loop into a fresh namespace (see experiments/apsoll_sweep.py)."
+    )
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 import numpy as np
 import pandas as pd
 import json
@@ -78,8 +96,30 @@ COND_KEYS  = ["baseline", "standard_orpsoc", "apsoll", "full_hybrid"]
 COND_LABELS = ["Baseline", "OrPSOC", "+APSOLL", "Full Hybrid"]
 COND_COLORS = ["#78909C", "#42A5F5", "#66BB6A", "#EF5350"]
 
-LEVEL_KEYS   = ["white_noise", "ar1", "drift", "regime_switch"]
+# step7 namespaces its level keys by benchmark version: with
+# BENCHMARK_VERSION="v2" it writes "v2_regime_switch", not "regime_switch".
+# The FILENAME is auto-detected above, but the keys inside carry the prefix too
+# -- hardcoding the v1 names made every table print N/A (get_seed_aucs misses
+# silently) and then died with KeyError: 'regime_switch' at the Jaccard section.
+# Derive the prefix from the data so this tracks whatever step7 actually wrote.
+_PREFIX = "v2_" if any(k.startswith("v2_") for k in full) else ""
+
+LEVEL_KEYS   = [f"{_PREFIX}{k}" for k in
+                ("white_noise", "ar1", "drift", "regime_switch")]
 LEVEL_LABELS = ["L1 White Noise", "L2 AR(1)", "L3 Drift", "L4 Regime Switch"]
+
+# Named handles for the two levels the plots single out, so the prefix is
+# applied in exactly one place.
+K_AR1    = f"{_PREFIX}ar1"
+K_REGIME = f"{_PREFIX}regime_switch"
+
+_missing = [k for k in LEVEL_KEYS if k not in full]
+if _missing:
+    raise SystemExit(
+        f"level keys absent from {ABLATION_PATH}: {_missing}\n"
+        f"  present: {sorted(full)}\n"
+        "  step7 and step8 disagree on BENCHMARK_VERSION."
+    )
 
 n_seeds = cfg["n_seeds"]
 
@@ -194,7 +234,7 @@ print("  High pre-switch + drop at switch + re-stabilise = detector working")
 print("─" * 65)
 
 for ck, cl in zip(COND_KEYS, COND_LABELS):
-    cond_data = full["regime_switch"]["conditions"][ck]
+    cond_data = full[K_REGIME]["conditions"][ck]
     pre  = np.mean([sr["jaccard"]["pre_regime_stability"]  for sr in cond_data])
     post = np.mean([sr["jaccard"]["post_regime_stability"] for sr in cond_data])
     drop = np.mean([sr["jaccard"]["regime_adaptation_drop"] for sr in cond_data])
@@ -216,7 +256,7 @@ print("─" * 65)
 switch_fold = n_folds // 2   # approximate fold where regime switch enters test
 
 for ck, cl in zip(COND_KEYS, COND_LABELS):
-    m_aucs, _ = get_fold_aucs_mean("regime_switch", ck)
+    m_aucs, _ = get_fold_aucs_mean(K_REGIME, ck)
     if len(m_aucs) == 0:
         print(f"  {cl:<20}  N/A")
         continue
@@ -281,7 +321,7 @@ fig.suptitle("Figure 2 — AUC per Walk-Forward Fold: Level 4 (Regime Switch)\n"
              fontsize=11, fontweight="bold")
 
 for ck, cl, col in zip(COND_KEYS, COND_LABELS, COND_COLORS):
-    m, s = get_fold_aucs_mean("regime_switch", ck)
+    m, s = get_fold_aucs_mean(K_REGIME, ck)
     if len(m) == 0: continue
     folds = range(1, len(m)+1)
     ax.plot(folds, m, "o-", color=col, linewidth=2, markersize=6, label=cl)
@@ -312,8 +352,8 @@ fig.suptitle("Figure 3 — Feature Stability (Jaccard Similarity) across Folds\n
              "Level 4 — Regime Switch.  Dip-and-recovery = detector working.",
              fontsize=11, fontweight="bold")
 
-for ax, (lk, ll) in zip(axes, [("ar1", "Level 2 — AR(1) Stationary (control)"),
-                                 ("regime_switch", "Level 4 — Regime Switch")]):
+for ax, (lk, ll) in zip(axes, [(K_AR1, "Level 2 — AR(1) Stationary (control)"),
+                                 (K_REGIME, "Level 4 — Regime Switch")]):
     for ck, cl, col in zip(COND_KEYS, COND_LABELS, COND_COLORS):
         try:
             jac_mat = get_jaccard_per_fold(lk, ck)
@@ -326,7 +366,7 @@ for ax, (lk, ll) in zip(axes, [("ar1", "Level 2 — AR(1) Stationary (control)")
         except Exception:
             pass
 
-    if lk == "regime_switch":
+    if lk == K_REGIME:
         switch_jac = switch_fold - 1   # Jaccard is between folds so offset by 1
         if switch_jac > 0:
             ax.axvline(switch_jac + 0.5, color="red", linewidth=2,
@@ -358,7 +398,7 @@ fig.suptitle("Figure 4 — Ablation Contribution Chart\n"
 # Compute marginal gains
 auc_vals = []
 for ck in COND_KEYS:
-    aucs = get_seed_aucs("regime_switch", ck)
+    aucs = get_seed_aucs(K_REGIME, ck)
     auc_vals.append(aucs.mean() if len(aucs) > 0 else 0.0)
 
 # Waterfall bars
@@ -445,7 +485,7 @@ else:
               ("full_hybrid_noimp", "Full Hybrid (no imp-reinit)", "#AB47BC"),
               ("full_hybrid", "Full Hybrid (imp-reinit)", "#EF5350")]
     for ck, cl, col in series:
-        m, s = get_fold_aucs_mean("regime_switch", ck)
+        m, s = get_fold_aucs_mean(K_REGIME, ck)
         if len(m) == 0:
             continue
         x = np.arange(1, len(m) + 1)

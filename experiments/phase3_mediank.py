@@ -32,7 +32,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from orpsoc_runner import pin_threads
+from orpsoc_runner import pin_threads, default_workers
 pin_threads(1)
 from joblib import Parallel, delayed
 import orpsoc_utils as U
@@ -123,7 +123,11 @@ if __name__ == "__main__":
                                          ("sector_etf", 500))
              for sd in range(N_SEEDS)]
     t0 = time.time()
-    res = [r for r in Parallel(n_jobs=6, backend="loky", verbose=5)(
+    # n_jobs was hardcoded to 6, which silently ignored ORPSOC_N_JOBS and
+    # capped this stage at 6 of the 32 vCPUs on the compute instance --
+    # roughly a 5x slowdown that we paid for on every EC2 run.
+    # default_workers() reads ORPSOC_N_JOBS and falls back to the local cap.
+    res = [r for r in Parallel(n_jobs=default_workers(), backend="loky", verbose=5)(
         delayed(unit)(*t) for t in tasks) if r]
     print(f"done in {(time.time()-t0)/60:.1f} min", flush=True)
 

@@ -12,9 +12,14 @@ process so every number in the table comes from one execution.
 import os, sys, json, time, pickle
 import numpy as np
 
-sys.path.insert(0, '/Users/kritgunsingh0719gmail.com/Documents/orpsoc_research')
-os.chdir('/Users/kritgunsingh0719gmail.com/Documents/orpsoc_research')
-from orpsoc_runner import pin_threads
+# Resolve the repo from THIS file's location, matching every sibling script in
+# experiments/. A hardcoded developer path was fine locally and killed the run
+# on EC2 with FileNotFoundError -- and because it died in stage 14, it also took
+# out stage 15 and the results tarball behind it.
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO)
+os.chdir(_REPO)
+from orpsoc_runner import pin_threads, default_workers
 pin_threads(1)
 from joblib import Parallel, delayed
 from orpsoc_utils import walk_forward_folds
@@ -89,7 +94,11 @@ if __name__ == "__main__":
     tasks = [(ds, mt, kind, n, f) for ds, mt, kind in DATASETS
              for n, f in MODELS.items()]
     t0 = time.time()
-    res = Parallel(n_jobs=6, backend="loky", verbose=5)(
+    # n_jobs was hardcoded to 6, which silently ignored ORPSOC_N_JOBS and
+    # capped this stage at 6 of the 32 vCPUs on the compute instance --
+    # roughly a 5x slowdown that we paid for on every EC2 run.
+    # default_workers() reads ORPSOC_N_JOBS and falls back to the local cap.
+    res = Parallel(n_jobs=default_workers(), backend="loky", verbose=5)(
         delayed(unit)(*t) for t in tasks)
     print(f"done in {(time.time()-t0)/60:.1f} min", flush=True)
     json.dump([{"ds": a, "kind": b, "model": c, "folds": d} for a, b, c, d in res],

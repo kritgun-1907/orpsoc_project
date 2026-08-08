@@ -46,6 +46,24 @@ stage() {
   [ "${PIPESTATUS[0]}" -eq 0 ] || fail "$name"
 }
 
+# A stage whose failure must NOT abort the pipeline.
+#
+# `stage foo || true` does NOT do this, though it looks like it should: stage()
+# reports failure via fail(), and `exit` inside a shell function terminates the
+# whole script, so the `|| true` is never reached. Stage 14 died on a bad path
+# and took stage 15 and the results tarball with it, despite both being marked
+# `|| true`. Warn and carry on instead.
+optional_stage() {
+  local name="$1"; shift
+  log "$name (optional)"
+  "$@" 2>&1 | tee "$LOG_DIR/${STAMP}_${name}.log"
+  if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    printf '\n\033[33m[%s] WARNING: %s failed -- continuing\033[0m\n' \
+      "$(date -u +%H:%M:%S)" "$name"
+  fi
+  return 0
+}
+
 log "environment"
 "$PY" -V 2>/dev/null || python3 -V
 echo "  vCPUs=$NPROC   ORPSOC_N_JOBS=$ORPSOC_N_JOBS"
@@ -135,8 +153,8 @@ ABLATION_JSON="$(ls -1t results/step7_ablation*.json 2>/dev/null | head -1)"
 [ -n "$ABLATION_JSON" ] || fail "no step7 ablation output found"
 log "analysing $ABLATION_JSON"
 stage 13_jaccard_null   "$PY" orpsoc_jaccard.py "$ABLATION_JSON"
-stage 14_adaptation     "$PY" experiments/ff_adaptation.py || true
-stage 15_compass        "$PY" experiments/compass_ceiling.py || true
+optional_stage 14_adaptation "$PY" experiments/ff_adaptation.py
+optional_stage 15_compass    "$PY" experiments/compass_ceiling.py
 
 # ── 7. package ────────────────────────────────────────────────────────────────
 log "packaging"

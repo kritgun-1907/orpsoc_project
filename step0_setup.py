@@ -10,6 +10,24 @@ Run with:
     python step0_setup.py
 """
 
+# ── import guard ─────────────────────────────────────────────────────────────
+# This file is a SCRIPT, not a module. It executes its whole pipeline at module
+# level, so `import step0_setup` runs the entire thing as a side effect --
+# for step7_ablation that is a 4-hour ablation triggered by an innocent-looking
+# import. Fail loudly instead.
+#
+# `globals().get("__name__", ...)` rather than a bare `__name__`: helpers are
+# reused by exec'ing the section above a marker into a fresh namespace (see
+# experiments/apsoll_sweep.py), and that namespace has no __name__ at all.
+if globals().get("__name__", "__main__") != "__main__":
+    raise ImportError(
+        "step0_setup.py is a script, not an importable module -- importing it would "
+        "execute the full pipeline. To reuse a helper, exec the section above "
+        "the main loop into a fresh namespace (see experiments/apsoll_sweep.py)."
+    )
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 import subprocess
 import sys
 

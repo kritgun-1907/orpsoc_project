@@ -676,7 +676,27 @@ class AdaptiveRegimeThreshold:
 #  FEATURE STABILITY METRIC  (Jaccard across folds)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def feature_stability_ratio(selected_sets: list) -> dict:
+def _elite_count(elite_frac: float, n_particles: int) -> int:
+    """
+    Number of particles seeded from the carried gbest on a regime trigger.
+
+    The floor is deliberately conditional. This used to be a flat
+    `max(1, round(elite_frac * n_particles))`, which meant elite_frac=0 still
+    produced ONE elite -- so "keep no population memory" was untestable, and an
+    elite_frac sweep silently returned identical results for 0.0 and 0.05
+    (observed: v2_drift AUC 0.7894/0.7866 byte-identical across both arms).
+
+    elite_frac == 0 now means exactly zero elites, which is the endpoint the
+    sweep needs. Any elite_frac > 0 still rounds UP to at least one particle, so
+    a small-but-nonzero fraction on a small swarm cannot silently become "no
+    memory at all" -- that would be a different and equally confusing bug.
+    """
+    if elite_frac <= 0:
+        return 0
+    return max(1, int(round(elite_frac * n_particles)))
+
+
+def feature_stability_ratio(selected_sets: list, switch_pair: int = None) -> dict:
     """
     Jaccard similarity between consecutive walk-forward folds.
 
@@ -706,8 +726,33 @@ def feature_stability_ratio(selected_sets: list) -> dict:
         j = len(A & B) / len(union) if union else 1.0
         jaccard.append(j)
 
-    mid  = len(jaccard) // 2
-    pre  = float(np.mean(jaccard[:mid]))  if mid > 0           else 1.0
+    # WHERE TO SPLIT pre / post.
+    #
+    # This used to be `mid = len(jaccard) // 2` -- the same "assume the break is
+    # at the midpoint" defect that classify_folds() was written to fix for
+    # FOLDS, left in place for the JACCARD split. It was correct only by
+    # coincidence: with n_splits=8 and a break at row 500 of 1000, the midpoint
+    # of the 7 fold-pairs lands on the true switch pair. Change n_splits, or use
+    # a benchmark whose break is not at 50%, and every pre/post/drop number
+    # silently describes the wrong folds.
+    #
+    # switch_pair is the index of the fold-pair spanning the break. Pair i
+    # compares fold i with fold i+1, so if the break first enters the TEST
+    # window of fold f (the straddle fold), the earliest pair across which the
+    # subset can causally change is pair f -- a walk-forward learner cannot
+    # react until the break is in its TRAINING window, one fold later.
+    #
+    # Passing None keeps the legacy midpoint AND flags it in the output, so a
+    # stationary level (no break) does not silently report a meaningless
+    # "regime adaptation drop" as if it were real.
+    if switch_pair is None:
+        mid = len(jaccard) // 2
+        split_basis = "midpoint (NO break supplied -- not regime-aware)"
+    else:
+        mid = int(np.clip(switch_pair, 0, len(jaccard)))
+        split_basis = f"switch_pair={switch_pair}"
+
+    pre  = float(np.mean(jaccard[:mid]))  if mid > 0            else 1.0
     post = float(np.mean(jaccard[mid:]))  if mid < len(jaccard) else 1.0
 
     return {
@@ -715,6 +760,8 @@ def feature_stability_ratio(selected_sets: list) -> dict:
         "pre_regime_stability":   pre,
         "post_regime_stability":  post,
         "regime_adaptation_drop": pre - post,
+        "split_index":            mid,
+        "split_basis":            split_basis,
     }
 
 
@@ -1140,7 +1187,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
             particles[0]["best_pos"] = ws.copy()
             particles[0]["best_fit"] = _eval(ws)
         else:
-            elite_k = max(1, int(round(elite_frac * n_particles)))
+            elite_k = _elite_count(elite_frac, n_particles)
             for i in range(elite_k):
                 if i == 0:
                     ep = ws.copy()                       # exact elite
@@ -1163,7 +1210,7 @@ def run_hybrid_orpsoc(X_tr, y_tr, X_te, y_te, feat_names,
     # Applies whenever hmm_trigger is set, with or without a warm start
     # (e.g. step_real_data calls the full-hybrid condition without warm_start).
     if hmm_trigger and use_importance_reinit:
-        elite_k = (max(1, int(round(elite_frac * n_particles)))
+        elite_k = (_elite_count(elite_frac, n_particles)
                    if warm_start_pos is not None else 0)
         n_fresh = n_particles - elite_k
         if n_fresh > 0:
