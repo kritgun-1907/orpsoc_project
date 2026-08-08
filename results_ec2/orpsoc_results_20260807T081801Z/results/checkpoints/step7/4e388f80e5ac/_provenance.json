@@ -1,0 +1,31 @@
+{
+  "config": {
+    "fast_mode": false,
+    "n_seeds": 30,
+    "max_iter": 60,
+    "n_particles": 20,
+    "n_splits": 8,
+    "theta": 0.5,
+    "theta_sweep": null,
+    "apsoll_patience": 1,
+    "apsoll_rearm_after": null,
+    "levels": [
+      "v2_null",
+      "v2_white_noise",
+      "v2_ar1",
+      "v2_drift",
+      "v2_regime_switch"
+    ],
+    "benchmark_version": "v2",
+    "logreg_pass_levels": [
+      "v2_drift",
+      "v2_regime_switch"
+    ],
+    "logreg_pass_criterion": "median_k"
+  },
+  "code": {
+    "orpsoc_utils.py": "03133f033ea1ec10710e51a10b3239faac12f2b8",
+    "step7_ablation.py": "bdca7591b98df69d1f7a894b2614a1ea3233dadc"
+  },
+  "hash": "4e388f80e5ac"
+}

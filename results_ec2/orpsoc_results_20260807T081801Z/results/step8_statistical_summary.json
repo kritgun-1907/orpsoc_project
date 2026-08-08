@@ -1,0 +1,172 @@
+{
+  "wilcoxon": {
+    "v2_white_noise": {
+      "baseline": {
+        "stat": 114.0,
+        "p": 0.9927597769994935,
+        "sig": "ns"
+      },
+      "standard_orpsoc": {
+        "stat": 261.0,
+        "p": 0.2849287986755371,
+        "sig": "ns"
+      },
+      "apsoll": {
+        "stat": 459.0,
+        "p": 1.30385160446167e-08,
+        "sig": "***"
+      }
+    },
+    "v2_ar1": {
+      "baseline": {
+        "stat": 0.0,
+        "p": 1.0,
+        "sig": "ns"
+      },
+      "standard_orpsoc": {
+        "stat": 134.0,
+        "p": 0.9797551389783621,
+        "sig": "ns"
+      },
+      "apsoll": {
+        "stat": 452.0,
+        "p": 8.195638656616211e-08,
+        "sig": "***"
+      }
+    },
+    "v2_drift": {
+      "baseline": {
+        "stat": 3.0,
+        "p": 0.9999999972060323,
+        "sig": "ns"
+      },
+      "standard_orpsoc": {
+        "stat": 21.0,
+        "p": 0.9999996544793248,
+        "sig": "ns"
+      },
+      "apsoll": {
+        "stat": 268.0,
+        "p": 0.2385532408952713,
+        "sig": "ns"
+      }
+    },
+    "v2_regime_switch": {
+      "baseline": {
+        "stat": 0.0,
+        "p": 1.0,
+        "sig": "ns"
+      },
+      "standard_orpsoc": {
+        "stat": 24.0,
+        "p": 0.9999994039535522,
+        "sig": "ns"
+      },
+      "apsoll": {
+        "stat": 227.0,
+        "p": 0.5483867637813091,
+        "sig": "ns"
+      }
+    }
+  },
+  "importance_ablation": {
+    "v2_white_noise": {
+      "full_hybrid_mean": 0.8878930591940152,
+      "full_hybrid_noimp_mean": 0.8161587275938317,
+      "delta_auc": 0.0717343316001835,
+      "wilcoxon_p_greater": 1.862645149230957e-09
+    },
+    "v2_ar1": {
+      "full_hybrid_mean": 0.8477018777079202,
+      "full_hybrid_noimp_mean": 0.8042992823795851,
+      "delta_auc": 0.043402595328335014,
+      "wilcoxon_p_greater": 9.955838322639465e-07
+    },
+    "v2_drift": {
+      "full_hybrid_mean": 0.7883647834716996,
+      "full_hybrid_noimp_mean": 0.7809406672367147,
+      "delta_auc": 0.0074241162349848455,
+      "wilcoxon_p_greater": 0.045974813401699066
+    },
+    "v2_regime_switch": {
+      "full_hybrid_mean": 0.6687067650423554,
+      "full_hybrid_noimp_mean": 0.6634201287279196,
+      "delta_auc": 0.005286636314435822,
+      "wilcoxon_p_greater": 0.07897383719682693
+    }
+  },
+  "auc_summary": {
+    "v2_white_noise": {
+      "baseline": {
+        "mean": 0.9121964618327648,
+        "std": 2.220446049250313e-16
+      },
+      "standard_orpsoc": {
+        "mean": 0.8840782073225639,
+        "std": 0.016596307978002513
+      },
+      "apsoll": {
+        "mean": 0.8074010445962241,
+        "std": 0.022881024852033412
+      },
+      "full_hybrid": {
+        "mean": 0.8878930591940152,
+        "std": 0.04191736298273717
+      }
+    },
+    "v2_ar1": {
+      "baseline": {
+        "mean": 0.9102589985348,
+        "std": 1.1102230246251565e-16
+      },
+      "standard_orpsoc": {
+        "mean": 0.8621749391891949,
+        "std": 0.020965623484685773
+      },
+      "apsoll": {
+        "mean": 0.7879289334676493,
+        "std": 0.02320894954205198
+      },
+      "full_hybrid": {
+        "mean": 0.8477018777079202,
+        "std": 0.037428109401343626
+      }
+    },
+    "v2_drift": {
+      "baseline": {
+        "mean": 0.8225286049690378,
+        "std": 2.220446049250313e-16
+      },
+      "standard_orpsoc": {
+        "mean": 0.8160150315290468,
+        "std": 0.01766115412233749
+      },
+      "apsoll": {
+        "mean": 0.7832095241367646,
+        "std": 0.019646977669949404
+      },
+      "full_hybrid": {
+        "mean": 0.7883647834716996,
+        "std": 0.016786822817085323
+      }
+    },
+    "v2_regime_switch": {
+      "baseline": {
+        "mean": 0.7355963223225834,
+        "std": 3.3306690738754696e-16
+      },
+      "standard_orpsoc": {
+        "mean": 0.6993719508861036,
+        "std": 0.021363126544604795
+      },
+      "apsoll": {
+        "mean": 0.6702120885449415,
+        "std": 0.025173082690952857
+      },
+      "full_hybrid": {
+        "mean": 0.6687067650423554,
+        "std": 0.023349534077162292
+      }
+    }
+  }
+}

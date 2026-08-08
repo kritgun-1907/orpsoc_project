@@ -1,0 +1,13 @@
+====================================================================
+  LEVEL 0 — True Null Benchmark
+====================================================================
+  X shape      : (1000, 50)
+  y balance    : 0.5100   (should be ~0.50)
+  NaNs         : 0
+  |corr(x_j,y)|: max=0.0582  mean=0.0251
+                 (max is order 1/sqrt(n) = 0.0316; pure sampling noise)
+
+  For contrast, Level 1 'white_noise': max |corr| = 0.7683  (NOT a null)
+
+  Saved: data/null.pkl
+  Add to step7_ablation.py LEVELS as:  "null": "Level 0 — True Null"

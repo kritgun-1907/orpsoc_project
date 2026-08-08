@@ -1,0 +1,42 @@
+[Parallel(n_jobs=6)]: Using backend LokyBackend with 6 concurrent workers.
+orpsoc_utils.py loaded — shared utilities ready.
+[Parallel(n_jobs=6)]: Done   6 tasks      | elapsed:    4.0s
+[Parallel(n_jobs=6)]: Done  14 out of  20 | elapsed:   19.8s remaining:    8.5s
+[Parallel(n_jobs=6)]: Done  20 out of  20 | elapsed:  1.3min finished
+done in 1.3 min
+
+============================================================================================
+  REFIT - FROZEN  (negative = adapting HURTS)   paired across 8 folds
+============================================================================================
+  dataset           model               k=5     k=10     k=20  frozen wins   p (k=5)
+  commodities       LightGBM        -0.0080  -0.0281  -0.0175         3/3     0.938
+  commodities       LinearSVM       -0.0087  -0.0486  -0.0027         3/3     0.688
+  commodities       LogReg          -0.0051  -0.0468  -0.0012         3/3     0.688
+  commodities       RandomForest    +0.0100  -0.0014  -0.0103         2/3     0.688
+  fama_french       LightGBM        +0.0060  -0.0498  -0.0265         2/3     0.297
+  fama_french       LinearSVM       -0.0075  -0.0372  -0.0131         3/3     0.500
+  fama_french       LogReg          -0.0081  -0.0389  -0.0156         3/3     0.500
+  fama_french       RandomForest    -0.0032  -0.0287  -0.0184         3/3     1.000
+  sector_etf        LightGBM        -0.0108  -0.0162  -0.0030         3/3     0.625
+  sector_etf        LinearSVM       -0.0156  -0.0076  -0.0072         3/3     0.250
+  sector_etf        LogReg          -0.0141  -0.0054  -0.0044         3/3     0.250
+  sector_etf        RandomForest    -0.0068  -0.0081  -0.0044         3/3     0.578
+  bonds             LightGBM        -0.0057  -0.0394  -0.0376         3/3     0.688
+  bonds             LinearSVM       -0.0140  -0.0014  -0.0234         3/3     0.688
+  bonds             LogReg          -0.0107  -0.0043  -0.0268         3/3     0.812
+  bonds             RandomForest    -0.0004  -0.0025  -0.0242         3/3     0.812
+  v2_regime_switch  LightGBM        +0.0742  +0.0454  +0.0294         0/3     0.016
+  v2_regime_switch  LinearSVM       +0.0838  +0.0704  +0.0270         0/3     0.016
+  v2_regime_switch  LogReg          +0.0839  +0.0708  +0.0306         0/3     0.016
+  v2_regime_switch  RandomForest    +0.0837  +0.0573  +0.0350         0/3     0.016
+
+  real-commodity frozen beats refit in 11/12 cells
+  real-equity frozen beats refit in 23/24 cells
+  real-rates frozen beats refit in 12/12 cells
+  synthetic  frozen beats refit in 0/12 cells
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.

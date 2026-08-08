@@ -1,0 +1,12 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: PREP-ONLY
+====================================================================
+
+── Building datasets ──────────────────────────────────────────
+  [cache] sector prices ← data/raw_sector_prices.pkl
+  SKIP sector_etf: No module named 'pyarrow'
+  [cache] Fama-French ← data/raw_fama_french.pkl
+  SKIP fama_french: No module named 'pyarrow'
+No datasets could be built (check network / yfinance).

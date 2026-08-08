@@ -1,0 +1,16 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: FULL (paper)
+  Seeds=20  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=c4e9cd394b46  checkpoints=on
+====================================================================
+  [cache] data/raw_bonds_prices.pkl
+  bonds        prices (5702, 6)  2003-12-05 -> 2026-08-06  tickers=['TLT', 'IEF', 'SHY', 'LQD', 'AGG', 'TIP']
+  bonds        X=(5577, 40)  y-mean=0.451  -> data/bonds.pkl
+
+  [cache] data/raw_commodities_prices.pkl
+  commodities  prices (4857, 6)  2007-04-18 -> 2026-08-06  tickers=['GLD', 'SLV', 'USO', 'DBC', 'DBA', 'UNG']
+  commodities  X=(4732, 40)  y-mean=0.454  -> data/commodities.pkl
+

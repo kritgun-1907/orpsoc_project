@@ -1,0 +1,13 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: PREP-ONLY
+====================================================================
+
+── Building datasets ──────────────────────────────────────────
+  [cache] sector prices ← data/raw_sector_prices.pkl
+  sector_etf    X=(6526, 58)  y-balance=0.447  → data/sector_etf.pkl
+  [cache] Fama-French ← data/raw_fama_french.pkl
+  fama_french   X=(6496, 50)  y-balance=0.442  → data/fama_french.pkl
+
+PREP_ONLY=True — datasets saved, skipping ablation.

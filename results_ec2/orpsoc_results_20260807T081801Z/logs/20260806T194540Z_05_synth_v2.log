@@ -1,0 +1,16 @@
+========================================================================
+  SYNTHETIC BENCHMARK v2 — corrected signal structure
+========================================================================
+  v1 files are NOT touched. v1 and v2 numbers are not comparable.
+
+  null            y-mean=0.482  |corr| signal=0.004-0.070  noise max=0.064
+  white_noise     y-mean=0.496  |corr| signal=0.248-0.425  noise max=0.070
+  ar1             y-mean=0.526  |corr| signal=0.241-0.403  noise max=0.155
+  drift           y-mean=0.487  |corr| signal=0.135-0.492  noise max=0.151
+  regime_switch   y-mean=0.488  |corr| signal=0.213-0.266  noise max=0.150
+
+  Saved: data/v2_*.pkl
+
+  To use, in step7_ablation.py:
+    LEVELS = {"v2_null": "L0 v2", "v2_white_noise": "L1 v2", ...}
+    SWITCH_INDEX = {..., "v2_regime_switch": 500}

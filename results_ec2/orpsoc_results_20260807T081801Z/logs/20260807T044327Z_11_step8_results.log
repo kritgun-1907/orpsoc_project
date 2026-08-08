@@ -1,0 +1,103 @@
+=================================================================
+  STEP 8: Final Analysis & Paper Plots
+=================================================================
+
+  reading results/step7_ablation_v2.json
+Config: 30 seeds  |  60 iters  |  20 particles  |  8 folds  |  FULL MODE
+
+─────────────────────────────────────────────────────────────────
+TABLE 1 — Mean AUC ± Std  (copy into paper)
+─────────────────────────────────────────────────────────────────
+Level                           Baseline            OrPSOC           +APSOLL       Full Hybrid
+──────────────────────────────────────────────────────────────────────────────────────────────
+L1 White Noise        0.9122 ± 0.0000  0.8841 ± 0.0166  0.8074 ± 0.0229  0.8879 ± 0.0419  
+L2 AR(1)              0.9103 ± 0.0000  0.8622 ± 0.0210  0.7879 ± 0.0232  0.8477 ± 0.0374  
+L3 Drift              0.8225 ± 0.0000  0.8160 ± 0.0177  0.7832 ± 0.0196  0.7884 ± 0.0168  
+L4 Regime Switch      0.7356 ± 0.0000  0.6994 ± 0.0214  0.6702 ± 0.0252  0.6687 ± 0.0233  
+
+─────────────────────────────────────────────────────────────────
+TABLE 2 — Wilcoxon Signed-Rank Tests  (Full Hybrid vs others)
+  H0: Full Hybrid = Condition X    α=0.05  (two-tailed)
+─────────────────────────────────────────────────────────────────
+Level                             Baseline              OrPSOC             +APSOLL
+──────────────────────────────────────────────────────────────────────────────────
+L1 White Noise        p=0.9928  ns  p=0.2849  ns  p=0.0000 ***  
+L2 AR(1)              p=1.0000  ns  p=0.9798  ns  p=0.0000 ***  
+L3 Drift              p=1.0000  ns  p=1.0000  ns  p=0.2386  ns  
+L4 Regime Switch      p=1.0000  ns  p=1.0000  ns  p=0.5484  ns  
+
+  *** p<0.001  ** p<0.01  * p<0.05  ns = not significant
+
+─────────────────────────────────────────────────────────────────
+TABLE 3 — Feature Stability (Jaccard)  on Level 4 — Regime Switch
+  High pre-switch + drop at switch + re-stabilise = detector working
+─────────────────────────────────────────────────────────────────
+  Baseline              pre=1.000  post=1.000  drop=+0.000
+  OrPSOC                pre=0.235  post=0.154  drop=+0.081
+  +APSOLL               pre=0.214  post=0.097  drop=+0.117
+  Full Hybrid           pre=0.474  post=0.365  drop=+0.109
+
+─────────────────────────────────────────────────────────────────
+RECOVERY SPEED — Level 4
+  Folds after switch where AUC < mean(pre-switch AUC) - 0.05
+─────────────────────────────────────────────────────────────────
+  Baseline              folds below threshold = 3  min_AUC_post=0.5741
+  OrPSOC                folds below threshold = 4  min_AUC_post=0.4683
+  +APSOLL               folds below threshold = 4  min_AUC_post=0.5151
+  Full Hybrid           folds below threshold = 4  min_AUC_post=0.4867
+
+Saved: plots/step8_fig1_ablation_barchart.png
+Saved: plots/step8_fig2_recovery_speed.png
+Saved: plots/step8_fig3_jaccard_stability.png
+Saved: plots/step8_fig4_waterfall_ablation.png
+
+=================================================================
+  IMPORTANCE-REINIT ABLATION  (Full Hybrid − no-imp variant)
+=================================================================
+  Level                  FullHybrid  NoImpReinit     Δ AUC   Wilcoxon p
+  L1 White Noise             0.8879       0.8162   +0.0717       0.0000
+  L2 AR(1)                   0.8477       0.8043   +0.0434       0.0000
+  L3 Drift                   0.7884       0.7809   +0.0074       0.0460
+  L4 Regime Switch           0.6687       0.6634   +0.0053       0.0790
+  Saved: plots/step8_fig5_importance_reinit.png
+
+  HMM TRIGGER FIRE-RATE per fold (1.0 = fired every seed):
+    v2_white_noise  1.00 0.00 0.00 0.00 0.00 1.00 0.00 0.00
+    v2_ar1          0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    v2_drift        0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    v2_regime_switch 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    ^ On regime_switch, expect fire-rate to spike near the middle fold.
+Saved: results/step8_statistical_summary.json
+
+=================================================================
+  PAPER TABLE — Copy this into your results section
+=================================================================
+
+\begin{table}[h]
+\centering
+\caption{Mean AUC-ROC (±std) across 30 seeds, 8 walk-forward folds}
+\begin{tabular}{lcccc}
+\hline
+Level & Baseline & OrPSOC & +APSOLL & Full Hybrid \\
+\hline
+L1 White Noise & 0.9122$\pm$0.0000 & 0.8841$\pm$0.0166 & 0.8074$\pm$0.0229 & 0.8879$\pm$0.0419 \\
+L2 AR(1) & 0.9103$\pm$0.0000 & 0.8622$\pm$0.0210 & 0.7879$\pm$0.0232 & 0.8477$\pm$0.0374 \\
+L3 Drift & 0.8225$\pm$0.0000 & 0.8160$\pm$0.0177 & 0.7832$\pm$0.0196 & 0.7884$\pm$0.0168 \\
+L4 Regime Switch & 0.7356$\pm$0.0000 & 0.6994$\pm$0.0214 & 0.6702$\pm$0.0252 & 0.6687$\pm$0.0233 \\
+\hline
+\end{tabular}
+\end{table}
+
+=================================================================
+  STEP 8 COMPLETE
+=================================================================
+
+Figures saved to: plots/step8_fig{1-4}_*.png
+Stats saved to:   results/step8_statistical_summary.json
+
+Your thesis/paper now has:
+  ✓  Ablation table with significance stars (Table 1 + 2)
+  ✓  Jaccard stability metric (novel — no prior OrPSOC paper has this)
+  ✓  Recovery speed analysis (Level 4 fold-by-fold)
+  ✓  Waterfall contribution chart (visual ablation)
+  ✓  LaTeX table ready for copy-paste

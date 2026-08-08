@@ -1,0 +1,61 @@
+=======================================================
+  STEP 1: Generate Synthetic Data
+=======================================================
+
+  Generated: Level 1 — White Noise
+    Rows: 1000   Features: 50
+    Target: 510 UP (51.0%)  490 DOWN (49.0%)
+
+  Generated: Level 2 — AR(1) Stationary
+    Rows: 1000   Features: 50
+    Target: 511 UP (51.1%)  489 DOWN (48.9%)
+
+  Generated: Level 3 — Drift (Non-Stationary)
+    Rows: 1000   Features: 50
+    Target: 641 UP (64.1%)  359 DOWN (35.9%)
+
+  Generated: Level 4 — Regime Switch
+    Rows: 1000   Features: 50
+    Target: 510 UP (51.0%)  490 DOWN (49.0%)
+
+Stationarity Tests:
+  ADF    (p < 0.05 → STATIONARY)      for white_noise, ar1
+  KPSS   (p < 0.05 → NON-STATIONARY)  for drift
+  Levene (p < 0.05 → NON-STATIONARY)  for regime_switch (variance break)
+
+  Level 1 — White Noise                     [ADF] p=0.00000  →  STATIONARY
+  Level 2 — AR(1) Stationary                [ADF] p=0.00000  →  STATIONARY
+  Level 3 — Drift (Non-Stationary)          [KPSS] p=0.01000  →  NON-STATIONARY
+  Level 4 — Regime Switch                   [Levene] p=0.00000  →  NON-STATIONARY
+
+Expected:
+  Level 1 (white_noise)   → STATIONARY
+  Level 2 (ar1)           → STATIONARY
+  Level 3 (drift)         → NON-STATIONARY
+  Level 4 (regime_switch) → NON-STATIONARY
+
+  PASS  Level 1 — White Noise
+  PASS  Level 2 — AR(1) Stationary
+  PASS  Level 3 — Drift (Non-Stationary)
+  PASS  Level 4 — Regime Switch
+
+  All stationarity results match expectations.
+
+Generating plots...
+  Saved: plots/step1_data_inspection.png
+  Saved: data/white_noise.pkl
+  Saved: data/ar1.pkl
+  Saved: data/drift.pkl
+  Saved: data/regime_switch.pkl
+
+=======================================================
+  STEP 1 COMPLETE
+=======================================================
+
+What you just built:
+  4 synthetic datasets, each 1000 steps x 50 features
+  5 signal features (truly predictive)
+  45 noise features (pure random)
+  Stationarity tests confirm the data is correct
+
+Next: run step2_baseline.py

@@ -1,0 +1,113 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: FULL (paper)
+  Seeds=20  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=c4e9cd394b46  checkpoints=on
+====================================================================
+
+── Building datasets ──────────────────────────────────────────
+  [cache] sector prices ← data/raw_sector_prices.pkl
+  sector_etf    X=(6526, 58)  y-balance=0.447  → data/sector_etf.pkl
+  [cache] Fama-French ← data/raw_fama_french.pkl
+  fama_french   X=(6496, 50)  y-balance=0.442  → data/fama_french.pkl
+
+── Ablation: sector_etf ────────────────────────────────────────
+  [sector_etf] checkpoints: 0/20 units already complete in results/checkpoints/step9/c4e9cd394b46
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 4/20  base=0.808  stan=0.787  apso=0.804  full=0.763  full=0.776  (2651s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 9/20  base=0.808  stan=0.814  apso=0.801  full=0.783  full=0.776  (2657s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 1/20  base=0.808  stan=0.800  apso=0.793  full=0.808  full=0.757  (2658s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 5/20  base=0.808  stan=0.803  apso=0.753  full=0.746  full=0.747  (2660s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 2/20  base=0.808  stan=0.822  apso=0.790  full=0.770  full=0.775  (2662s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 15/20  base=0.808  stan=0.806  apso=0.807  full=0.790  full=0.785  (2664s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 16/20  base=0.808  stan=0.808  apso=0.787  full=0.775  full=0.794  (2668s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 3/20  base=0.808  stan=0.796  apso=0.794  full=0.814  full=0.811  (2670s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 18/20  base=0.808  stan=0.804  apso=0.780  full=0.792  full=0.751  (2673s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 11/20  base=0.808  stan=0.813  apso=0.769  full=0.791  full=0.769  (2681s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 6/20  base=0.808  stan=0.797  apso=0.764  full=0.771  full=0.780  (2685s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 13/20  base=0.808  stan=0.802  apso=0.794  full=0.744  full=0.757  (2695s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 20/20  base=0.808  stan=0.808  apso=0.770  full=0.794  full=0.748  (3594s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 19/20  base=0.808  stan=0.795  apso=0.788  full=0.787  full=0.792  (3598s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 12/20  base=0.808  stan=0.804  apso=0.772  full=0.745  full=0.794  (3599s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 10/20  base=0.808  stan=0.784  apso=0.776  full=0.815  full=0.778  (3601s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 17/20  base=0.808  stan=0.807  apso=0.780  full=0.756  full=0.781  (3605s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 7/20  base=0.808  stan=0.819  apso=0.780  full=0.781  full=0.774  (3611s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 8/20  base=0.808  stan=0.822  apso=0.782  full=0.790  full=0.776  (3617s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [sector_etf] seed 14/20  base=0.808  stan=0.815  apso=0.779  full=0.801  full=0.779  (3622s)
+  Saved: plots/step9_sector_etf_recovery.png
+  [sector_etf] imp-reinit ablation: FullHybrid=0.7808  NoImp=0.7749  Δ=+0.0059  p=0.1942
+  [sector_etf] break_folds=[1, 5]
+    fold      :    1    2    3    4    5    6    7    8
+    p_trans   : 0.99 0.03 1.00 0.00 0.00 0.00 1.00 0.00
+    raw_fire  :    1    0    1    0    0    0    1    0
+    final trig:    1    0    1    0    0    0    1    0
+    (W = warm-up fold, not enough training data to trust the detector -- not evaluated, not counted as no-signal)
+  sector_etf mean AUC:  base=0.8083  stan=0.8052  apso=0.7831  full=0.7808  full=0.7749
+
+── Ablation: fama_french ────────────────────────────────────────
+  [fama_french] checkpoints: 0/20 units already complete in results/checkpoints/step9/c4e9cd394b46
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 14/20  base=0.839  stan=0.779  apso=0.802  full=0.792  full=0.780  (2374s)
+  [fama_french] seed 1/20  base=0.839  stan=0.813  apso=0.768  full=0.774  full=0.775  (2376s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 19/20  base=0.839  stan=0.789  apso=0.794  full=0.777  full=0.780  (2382s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 17/20  base=0.839  stan=0.824  apso=0.807  full=0.803  full=0.808  (2382s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 20/20  base=0.839  stan=0.815  apso=0.745  full=0.726  full=0.720  (2393s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 10/20  base=0.839  stan=0.819  apso=0.784  full=0.784  full=0.779  (2400s)
+  [fama_french] seed 8/20  base=0.839  stan=0.821  apso=0.774  full=0.784  full=0.756  (2402s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 9/20  base=0.839  stan=0.792  apso=0.770  full=0.773  full=0.765  (2404s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 18/20  base=0.839  stan=0.778  apso=0.760  full=0.778  full=0.786  (2408s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 16/20  base=0.839  stan=0.787  apso=0.788  full=0.782  full=0.778  (2410s)
+  [fama_french] seed 2/20  base=0.839  stan=0.794  apso=0.769  full=0.784  full=0.782  (2414s)
+  [fama_french] seed 3/20  base=0.839  stan=0.808  apso=0.757  full=0.798  full=0.810  (2428s)
+  [fama_french] seed 4/20  base=0.839  stan=0.752  apso=0.714  full=0.756  full=0.748  (3235s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 12/20  base=0.839  stan=0.831  apso=0.807  full=0.811  full=0.822  (3236s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 15/20  base=0.839  stan=0.772  apso=0.778  full=0.776  full=0.767  (3238s)
+  [fama_french] seed 7/20  base=0.839  stan=0.790  apso=0.767  full=0.809  full=0.796  (3242s)
+  [fama_french] seed 6/20  base=0.839  stan=0.821  apso=0.723  full=0.791  full=0.772  (3243s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 13/20  base=0.839  stan=0.829  apso=0.764  full=0.741  full=0.742  (3244s)
+  [fama_french] seed 5/20  base=0.839  stan=0.798  apso=0.751  full=0.785  full=0.807  (3248s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [fama_french] seed 11/20  base=0.839  stan=0.784  apso=0.764  full=0.780  full=0.782  (3248s)
+  Saved: plots/step9_fama_french_recovery.png
+  [fama_french] imp-reinit ablation: FullHybrid=0.7802  NoImp=0.7776  Δ=+0.0026  p=0.1744
+  [fama_french] break_folds=[2, 5]
+    fold      :    1    2    3    4    5    6    7    8
+    p_trans   : 0.00 0.00 0.04 0.00 0.00 0.00 1.00 0.39
+    raw_fire  :    0    0    0    0    0    0    1    1
+    final trig:    0    0    0    0    0    0    1    0
+    (W = warm-up fold, not enough training data to trust the detector -- not evaluated, not counted as no-signal)
+  fama_french mean AUC:  base=0.8390  stan=0.7998  apso=0.7693  full=0.7802  full=0.7776
+
+Saved: results/step9_real_data.json   (6874s)
+Done.

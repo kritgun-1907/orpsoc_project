@@ -1,0 +1,25 @@
+======================================================================================
+  DATASET INTEGRITY
+======================================================================================
+  dataset                           shape   y-mean  max|corr|  status
+  ar1                          (1000, 50)    0.511      0.976  OK
+  bonds                        (5577, 40)    0.451      0.509  OK
+                                                               labels reproduce from own base: 100.0%
+  commodities                  (4732, 40)    0.454      0.454  OK
+                                                               labels reproduce from own base: 100.0%
+  drift                        (1000, 50)    0.641      0.972  OK
+  fama_french                  (6496, 50)    0.442      0.581  OK
+                                                               labels reproduce from own base: 100.0%
+  null                         (1000, 50)    0.510      0.078  OK
+  regime_switch                (1000, 50)    0.510      0.588  OK
+  sector_etf                   (6526, 58)    0.447      0.590  OK
+                                                               labels reproduce from own base: 100.0%
+  v2_ar1                       (1000, 50)    0.526      0.473  OK
+  v2_drift                     (1000, 50)    0.487      0.574  OK
+  v2_null                      (1000, 50)    0.482      0.083  OK
+  v2_regime_switch             (1000, 50)    0.488      0.312  OK
+  v2_white_noise               (1000, 50)    0.496      0.496  OK
+  white_noise                  (1000, 50)    0.510      0.951  OK
+
+======================================================================================
+  all 14 datasets sound

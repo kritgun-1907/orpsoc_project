@@ -1,0 +1,79 @@
+closed form vs Monte Carlo (N = 50)
+     k    closed   MC mean   MC sd    diff
+     5    0.0526    0.0585  0.0787 +0.0059
+     8    0.0870    0.0922  0.0751 +0.0052
+    10    0.1111    0.1161  0.0733 +0.0050
+    12    0.1364    0.1408  0.0718 +0.0045
+    15    0.1765    0.1807  0.0703 +0.0042
+    20    0.2500    0.2538  0.0676 +0.0038
+    30    0.4286    0.4315  0.0585 +0.0030
+    50    1.0000    1.0000  0.0000 +0.0000
+  (closed form runs slightly low for small k; use `excess`/`z` there)
+
+========================================================================================
+  JACCARD vs NULL   —   results/step7_ablation_v2.json
+  config: {'fast_mode': False, 'n_seeds': 30, 'max_iter': 60, 'n_particles': 20, 'n_splits': 8, 'theta': 0.5, 'theta_sweep': None, 'apsoll_patience': 1, 'apsoll_rearm_after': None, 'levels': ['v2_null', 'v2_white_noise', 'v2_ar1', 'v2_drift', 'v2_regime_switch'], 'benchmark_version': 'v2', 'logreg_pass_levels': ['v2_drift', 'v2_regime_switch'], 'logreg_pass_criterion': 'median_k'}
+========================================================================================
+
+  Level 0 — True Null (v2)   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         10.9    0.121   0.142    1.19   +0.022     0.2   0.0003
+    apsoll                   4.9    0.049   0.065    1.37   +0.016     0.1   0.0182
+    full_hybrid              7.3    0.073   0.445    8.75   +0.372     4.7   0.0000
+    full_hybrid_noimp        7.5    0.076   0.411    7.73   +0.335     4.2   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 1 — White Noise (v2)   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         11.4    0.127   0.264    2.08   +0.136     1.9   0.0000
+    apsoll                   7.1    0.072   0.198    2.89   +0.126     1.7   0.0000
+    full_hybrid              7.1    0.076   0.872   12.43   +0.796    10.5   0.0000
+    full_hybrid_noimp        7.3    0.079   0.671    9.85   +0.592     7.8   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 2 — AR(1) Stationary (v2)   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         11.4    0.128   0.252    1.98   +0.125     1.7   0.0000
+    apsoll                   7.4    0.077   0.183    2.45   +0.106     1.4   0.0000
+    full_hybrid              9.4    0.101   0.643    7.43   +0.543     7.3   0.0000
+    full_hybrid_noimp        9.0    0.094   0.594    7.78   +0.500     6.6   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 3 — Drift (v2)   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         10.6    0.117   0.204    1.75   +0.087     1.2   0.0000
+    apsoll                   6.4    0.066   0.186    2.92   +0.120     1.6   0.0000
+    full_hybrid              8.3    0.086   0.625    9.29   +0.538     7.1   0.0000
+    full_hybrid_noimp        8.6    0.090   0.628    8.90   +0.537     7.1   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 4 — Regime Switch (v2)   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         11.1    0.123   0.189    1.56   +0.066     0.9   0.0000
+    apsoll                   6.6    0.067   0.147    2.15   +0.080     1.0   0.0000
+    full_hybrid              9.4    0.093   0.412    5.45   +0.319     4.2   0.0000
+    full_hybrid_noimp        9.4    0.093   0.421    6.22   +0.328     4.3   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 3 — Drift (v2) · LogReg/median_k   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         10.8    0.121   0.233    1.94   +0.112     1.5   0.0000
+    apsoll                   6.8    0.071   0.226    3.31   +0.156     2.1   0.0000
+    full_hybrid              8.6    0.091   0.732    9.67   +0.641     8.5   0.0000
+    full_hybrid_noimp        8.8    0.093   0.713    9.38   +0.620     8.3   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold
+
+  Level 4 — Regime Switch (v2) · LogReg/median_k   (N = 50 features)
+    condition             mean k   null J   obs J   ratio   excess       z        p
+    baseline                50.0    1.000   1.000    1.00   +0.000       —   1.0000
+    standard_orpsoc         11.1    0.123   0.245    2.01   +0.122     1.6   0.0000
+    apsoll                   7.2    0.075   0.219    2.99   +0.144     1.9   0.0000
+    full_hybrid              9.0    0.096   0.726    8.94   +0.630     8.4   0.0000
+    full_hybrid_noimp        9.0    0.096   0.693    8.86   +0.597     7.9   0.0000
+      ratio 1.0 = indistinguishable from selecting at random each fold

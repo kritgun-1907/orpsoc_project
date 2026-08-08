@@ -1,0 +1,62 @@
+{
+  "standard": {
+    "selected": [
+      "signal_3",
+      "signal_4",
+      "noise_0",
+      "noise_1",
+      "noise_2",
+      "noise_4",
+      "noise_5",
+      "noise_7",
+      "noise_10",
+      "noise_12",
+      "noise_18",
+      "noise_19",
+      "noise_20",
+      "noise_24",
+      "noise_25",
+      "noise_26",
+      "noise_30",
+      "noise_32",
+      "noise_37",
+      "noise_38",
+      "noise_40",
+      "noise_41"
+    ],
+    "recall_r1": 0.0,
+    "recall_r2": 1.0,
+    "runtime": 500.6634109020233
+  },
+  "adaptive": {
+    "selected": [
+      "signal_3",
+      "signal_4",
+      "noise_2",
+      "noise_4",
+      "noise_9",
+      "noise_17",
+      "noise_18",
+      "noise_19",
+      "noise_20",
+      "noise_22",
+      "noise_23",
+      "noise_24",
+      "noise_25",
+      "noise_26",
+      "noise_27",
+      "noise_29",
+      "noise_30",
+      "noise_31",
+      "noise_32",
+      "noise_37",
+      "noise_38",
+      "noise_41"
+    ],
+    "recall_r1": 0.0,
+    "recall_r2": 1.0,
+    "change_iters": [],
+    "runtime": 499.47482895851135
+  },
+  "improvement": 0.0
+}

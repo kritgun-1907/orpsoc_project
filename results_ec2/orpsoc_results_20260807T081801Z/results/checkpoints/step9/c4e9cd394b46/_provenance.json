@@ -1,0 +1,15 @@
+{
+  "config": {
+    "fast_mode": false,
+    "n_seeds": 20,
+    "max_iter": 60,
+    "n_particles": 20,
+    "n_splits": 8,
+    "theta": 0.5
+  },
+  "code": {
+    "orpsoc_utils.py": "03133f033ea1ec10710e51a10b3239faac12f2b8",
+    "step9_real_data.py": "39d80d2d6a898a52a966bd8e85cb9e6aef40cbf2"
+  },
+  "hash": "c4e9cd394b46"
+}

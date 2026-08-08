@@ -1,0 +1,12 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: FULL (paper)
+  Seeds=20  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=4e6a6a9af4a6  checkpoints=on
+====================================================================
+  [cache] data/raw_bonds_prices.pkl
+  SKIP bonds: No module named 'pyarrow'
+  [cache] data/raw_commodities_prices.pkl
+  SKIP commodities: No module named 'pyarrow'

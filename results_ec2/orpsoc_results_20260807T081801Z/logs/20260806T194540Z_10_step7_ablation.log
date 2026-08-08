@@ -1,0 +1,405 @@
+orpsoc_utils.py loaded — shared utilities ready.
+=================================================================
+  STEP 7: Ablation Study
+  Mode: FULL (paper)
+  Seeds=30  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=4e388f80e5ac  checkpoints=on
+=================================================================
+
+
+─────────────────────────────────────────────────────────────────
+  Level 0 — True Null (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=30/30  bas=0.524  sta=0.527  aps=0.540  ful=0.519  ful=0.496  (937s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 2/30  bas=0.524  sta=0.525  aps=0.459  ful=0.471  ful=0.475  (1057s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 1/30  bas=0.524  sta=0.514  aps=0.470  ful=0.495  ful=0.493  (1133s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=29/30  bas=0.524  sta=0.510  aps=0.479  ful=0.476  ful=0.486  (1261s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=28/30  bas=0.524  sta=0.488  aps=0.484  ful=0.511  ful=0.522  (1306s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 3/30  bas=0.524  sta=0.540  aps=0.511  ful=0.479  ful=0.485  (1310s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=15/30  bas=0.524  sta=0.498  aps=0.485  ful=0.529  ful=0.487  (1337s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=16/30  bas=0.524  sta=0.527  aps=0.481  ful=0.519  ful=0.508  (1343s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=27/30  bas=0.524  sta=0.511  aps=0.514  ful=0.545  ful=0.501  (1376s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 4/30  bas=0.524  sta=0.510  aps=0.480  ful=0.537  ful=0.517  (1378s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=26/30  bas=0.524  sta=0.479  aps=0.497  ful=0.503  ful=0.529  (1395s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 5/30  bas=0.524  sta=0.466  aps=0.512  ful=0.502  ful=0.504  (1396s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=25/30  bas=0.524  sta=0.505  aps=0.490  ful=0.504  ful=0.464  (1398s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 7/30  bas=0.524  sta=0.489  aps=0.491  ful=0.470  ful=0.500  (1401s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=24/30  bas=0.524  sta=0.506  aps=0.469  ful=0.473  ful=0.473  (1403s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 6/30  bas=0.524  sta=0.508  aps=0.477  ful=0.509  ful=0.531  (1406s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 8/30  bas=0.524  sta=0.528  aps=0.502  ful=0.493  ful=0.483  (1411s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=19/30  bas=0.524  sta=0.507  aps=0.542  ful=0.506  ful=0.500  (1411s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=22/30  bas=0.524  sta=0.534  aps=0.522  ful=0.485  ful=0.510  (1416s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed= 9/30  bas=0.524  sta=0.515  aps=0.463  ful=0.479  ful=0.527  (1420s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=10/30  bas=0.524  sta=0.516  aps=0.503  ful=0.488  ful=0.484  (1421s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=20/30  bas=0.524  sta=0.516  aps=0.517  ful=0.486  ful=0.542  (1424s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=17/30  bas=0.524  sta=0.495  aps=0.476  ful=0.504  ful=0.524  (1425s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=12/30  bas=0.524  sta=0.494  aps=0.553  ful=0.516  ful=0.487  (1429s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=23/30  bas=0.524  sta=0.503  aps=0.495  ful=0.481  ful=0.494  (1432s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=11/30  bas=0.524  sta=0.537  aps=0.479  ful=0.504  ful=0.507  (1433s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=18/30  bas=0.524  sta=0.504  aps=0.498  ful=0.485  ful=0.512  (1434s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=14/30  bas=0.524  sta=0.509  aps=0.514  ful=0.527  ful=0.532  (1434s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=21/30  bas=0.524  sta=0.498  aps=0.514  ful=0.509  ful=0.491  (1437s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_null] seed=13/30  bas=0.524  sta=0.520  aps=0.482  ful=0.473  ful=0.471  (1439s)
+  Level 0 — True Null (v2) done — elapsed 24.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 1 — White Noise (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_white_noise] seed=19/30  bas=0.912  sta=0.903  aps=0.794  ful=0.929  ful=0.828  (948s)
+  [v2_white_noise] seed= 2/30  bas=0.912  sta=0.878  aps=0.802  ful=0.845  ful=0.852  (952s)
+  [v2_white_noise] seed=27/30  bas=0.912  sta=0.892  aps=0.787  ful=0.805  ful=0.761  (1284s)
+  [v2_white_noise] seed= 3/30  bas=0.912  sta=0.865  aps=0.823  ful=0.886  ful=0.844  (1286s)
+  [v2_white_noise] seed=20/30  bas=0.912  sta=0.881  aps=0.793  ful=0.865  ful=0.837  (1287s)
+  [v2_white_noise] seed=26/30  bas=0.912  sta=0.882  aps=0.770  ful=0.894  ful=0.841  (1290s)
+  [v2_white_noise] seed= 9/30  bas=0.912  sta=0.885  aps=0.839  ful=0.886  ful=0.772  (1398s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_white_noise] seed=28/30  bas=0.912  sta=0.918  aps=0.747  ful=0.910  ful=0.820  (1399s)
+  [v2_white_noise] seed=17/30  bas=0.912  sta=0.883  aps=0.817  ful=0.930  ful=0.808  (1401s)
+  [v2_white_noise] seed= 1/30  bas=0.912  sta=0.879  aps=0.811  ful=0.930  ful=0.771  (1402s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_white_noise] seed=30/30  bas=0.912  sta=0.876  aps=0.799  ful=0.898  ful=0.859  (1403s)
+  [v2_white_noise] seed=23/30  bas=0.912  sta=0.904  aps=0.817  ful=0.923  ful=0.828  (1407s)
+  [v2_white_noise] seed= 8/30  bas=0.912  sta=0.864  aps=0.775  ful=0.930  ful=0.807  (1409s)
+  [v2_white_noise] seed=21/30  bas=0.912  sta=0.885  aps=0.786  ful=0.930  ful=0.871  (1411s)
+  [v2_white_noise] seed=13/30  bas=0.912  sta=0.872  aps=0.792  ful=0.853  ful=0.787  (1435s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_white_noise] seed=29/30  bas=0.912  sta=0.832  aps=0.829  ful=0.930  ful=0.778  (1441s)
+  [v2_white_noise] seed= 7/30  bas=0.912  sta=0.900  aps=0.831  ful=0.824  ful=0.785  (1443s)
+  [v2_white_noise] seed=16/30  bas=0.912  sta=0.910  aps=0.844  ful=0.930  ful=0.779  (1443s)
+  [v2_white_noise] seed=22/30  bas=0.912  sta=0.889  aps=0.831  ful=0.930  ful=0.912  (1446s)
+  [v2_white_noise] seed=14/30  bas=0.912  sta=0.902  aps=0.835  ful=0.861  ful=0.853  (1447s)
+  [v2_white_noise] seed=10/30  bas=0.912  sta=0.892  aps=0.820  ful=0.930  ful=0.842  (1447s)
+  [v2_white_noise] seed=25/30  bas=0.912  sta=0.870  aps=0.798  ful=0.930  ful=0.773  (1448s)
+  [v2_white_noise] seed= 6/30  bas=0.912  sta=0.863  aps=0.847  ful=0.818  ful=0.779  (1448s)
+  [v2_white_noise] seed=24/30  bas=0.912  sta=0.891  aps=0.790  ful=0.823  ful=0.793  (1449s)
+  [v2_white_noise] seed=15/30  bas=0.912  sta=0.886  aps=0.797  ful=0.894  ful=0.803  (1453s)
+  [v2_white_noise] seed=18/30  bas=0.912  sta=0.886  aps=0.819  ful=0.847  ful=0.793  (1454s)
+  [v2_white_noise] seed=11/30  bas=0.912  sta=0.889  aps=0.821  ful=0.903  ful=0.858  (1455s)
+  [v2_white_noise] seed=12/30  bas=0.912  sta=0.874  aps=0.788  ful=0.830  ful=0.815  (1455s)
+  [v2_white_noise] seed= 4/30  bas=0.912  sta=0.874  aps=0.812  ful=0.843  ful=0.824  (1455s)
+  [v2_white_noise] seed= 5/30  bas=0.912  sta=0.897  aps=0.805  ful=0.930  ful=0.814  (1456s)
+  Level 1 — White Noise (v2) done — elapsed 48.3 min
+
+─────────────────────────────────────────────────────────────────
+  Level 2 — AR(1) Stationary (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_ar1] seed=16/30  bas=0.910  sta=0.874  aps=0.728  ful=0.826  ful=0.714  (948s)
+  [v2_ar1] seed= 1/30  bas=0.910  sta=0.835  aps=0.797  ful=0.868  ful=0.809  (994s)
+  [v2_ar1] seed=24/30  bas=0.910  sta=0.877  aps=0.805  ful=0.892  ful=0.793  (1289s)
+  [v2_ar1] seed= 5/30  bas=0.910  sta=0.873  aps=0.768  ful=0.853  ful=0.776  (1300s)
+  [v2_ar1] seed=11/30  bas=0.910  sta=0.856  aps=0.804  ful=0.807  ful=0.816  (1300s)
+  [v2_ar1] seed=25/30  bas=0.910  sta=0.856  aps=0.792  ful=0.867  ful=0.794  (1301s)
+  [v2_ar1] seed=20/30  bas=0.910  sta=0.824  aps=0.773  ful=0.769  ful=0.787  (1399s)
+  [v2_ar1] seed= 8/30  bas=0.910  sta=0.859  aps=0.801  ful=0.857  ful=0.820  (1406s)
+  [v2_ar1] seed=26/30  bas=0.910  sta=0.851  aps=0.775  ful=0.832  ful=0.837  (1409s)
+  [v2_ar1] seed=22/30  bas=0.910  sta=0.869  aps=0.830  ful=0.847  ful=0.815  (1410s)
+  [v2_ar1] seed= 6/30  bas=0.910  sta=0.865  aps=0.819  ful=0.849  ful=0.774  (1411s)
+  [v2_ar1] seed=28/30  bas=0.910  sta=0.907  aps=0.767  ful=0.910  ful=0.838  (1412s)
+  [v2_ar1] seed= 7/30  bas=0.910  sta=0.872  aps=0.788  ful=0.796  ful=0.740  (1413s)
+  [v2_ar1] seed= 2/30  bas=0.910  sta=0.896  aps=0.771  ful=0.872  ful=0.865  (1414s)
+  [v2_ar1] seed=19/30  bas=0.910  sta=0.863  aps=0.812  ful=0.893  ful=0.820  (1419s)
+  [v2_ar1] seed=13/30  bas=0.910  sta=0.822  aps=0.746  ful=0.883  ful=0.794  (1446s)
+  [v2_ar1] seed=18/30  bas=0.910  sta=0.837  aps=0.764  ful=0.844  ful=0.761  (1446s)
+  [v2_ar1] seed=12/30  bas=0.910  sta=0.854  aps=0.772  ful=0.798  ful=0.769  (1448s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_ar1] seed=30/30  bas=0.910  sta=0.890  aps=0.826  ful=0.898  ful=0.829  (1447s)
+  [v2_ar1] seed= 9/30  bas=0.910  sta=0.855  aps=0.779  ful=0.883  ful=0.850  (1450s)
+  [v2_ar1] seed=27/30  bas=0.910  sta=0.885  aps=0.778  ful=0.866  ful=0.839  (1450s)
+  [v2_ar1] seed=17/30  bas=0.910  sta=0.854  aps=0.785  ful=0.852  ful=0.812  (1451s)
+  [v2_ar1] seed=14/30  bas=0.910  sta=0.859  aps=0.813  ful=0.817  ful=0.815  (1451s)
+  [v2_ar1] seed=21/30  bas=0.910  sta=0.864  aps=0.813  ful=0.825  ful=0.848  (1451s)
+  [v2_ar1] seed=23/30  bas=0.910  sta=0.874  aps=0.780  ful=0.871  ful=0.824  (1453s)
+  [v2_ar1] seed= 4/30  bas=0.910  sta=0.874  aps=0.772  ful=0.796  ful=0.795  (1453s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_ar1] seed=29/30  bas=0.910  sta=0.888  aps=0.771  ful=0.853  ful=0.842  (1452s)
+  [v2_ar1] seed=10/30  bas=0.910  sta=0.831  aps=0.815  ful=0.763  ful=0.757  (1455s)
+  [v2_ar1] seed= 3/30  bas=0.910  sta=0.873  aps=0.790  ful=0.856  ful=0.794  (1461s)
+  [v2_ar1] seed=15/30  bas=0.910  sta=0.826  aps=0.804  ful=0.888  ful=0.801  (1461s)
+  Level 2 — AR(1) Stationary (v2) done — elapsed 72.6 min
+
+─────────────────────────────────────────────────────────────────
+  Level 3 — Drift (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_drift] seed=28/30  bas=0.823  sta=0.828  aps=0.797  ful=0.814  ful=0.775  (974s)
+  [v2_drift] seed=14/30  bas=0.823  sta=0.819  aps=0.736  ful=0.789  ful=0.783  (1023s)
+  [v2_drift] seed=17/30  bas=0.823  sta=0.842  aps=0.785  ful=0.771  ful=0.764  (1268s)
+  [v2_drift] seed= 3/30  bas=0.823  sta=0.817  aps=0.781  ful=0.812  ful=0.802  (1300s)
+  [v2_drift] seed= 2/30  bas=0.823  sta=0.828  aps=0.780  ful=0.787  ful=0.818  (1308s)
+  [v2_drift] seed= 8/30  bas=0.823  sta=0.830  aps=0.811  ful=0.811  ful=0.803  (1329s)
+  [v2_drift] seed= 9/30  bas=0.823  sta=0.811  aps=0.791  ful=0.771  ful=0.706  (1344s)
+  [v2_drift] seed=13/30  bas=0.823  sta=0.804  aps=0.778  ful=0.779  ful=0.812  (1384s)
+  [v2_drift] seed=27/30  bas=0.823  sta=0.811  aps=0.758  ful=0.775  ful=0.800  (1393s)
+  [v2_drift] seed= 5/30  bas=0.823  sta=0.799  aps=0.803  ful=0.779  ful=0.782  (1397s)
+  [v2_drift] seed=24/30  bas=0.823  sta=0.843  aps=0.774  ful=0.804  ful=0.785  (1403s)
+  [v2_drift] seed=25/30  bas=0.823  sta=0.818  aps=0.761  ful=0.794  ful=0.759  (1405s)
+  [v2_drift] seed=16/30  bas=0.823  sta=0.831  aps=0.803  ful=0.788  ful=0.784  (1407s)
+  [v2_drift] seed= 6/30  bas=0.823  sta=0.835  aps=0.806  ful=0.806  ful=0.811  (1412s)
+  [v2_drift] seed=21/30  bas=0.823  sta=0.838  aps=0.803  ful=0.793  ful=0.784  (1421s)
+  [v2_drift] seed=18/30  bas=0.823  sta=0.848  aps=0.775  ful=0.766  ful=0.759  (1422s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_drift] seed=30/30  bas=0.823  sta=0.820  aps=0.809  ful=0.788  ful=0.762  (1429s)
+  [v2_drift] seed=22/30  bas=0.823  sta=0.798  aps=0.765  ful=0.814  ful=0.791  (1432s)
+  [v2_drift] seed= 1/30  bas=0.823  sta=0.833  aps=0.755  ful=0.768  ful=0.769  (1437s)
+  [v2_drift] seed=19/30  bas=0.823  sta=0.810  aps=0.785  ful=0.784  ful=0.741  (1437s)
+  [v2_drift] seed= 4/30  bas=0.823  sta=0.837  aps=0.774  ful=0.767  ful=0.763  (1439s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_drift] seed=29/30  bas=0.823  sta=0.786  aps=0.782  ful=0.769  ful=0.772  (1440s)
+  [v2_drift] seed=10/30  bas=0.823  sta=0.802  aps=0.820  ful=0.792  ful=0.799  (1443s)
+  [v2_drift] seed=15/30  bas=0.823  sta=0.811  aps=0.767  ful=0.795  ful=0.812  (1443s)
+  [v2_drift] seed=12/30  bas=0.823  sta=0.806  aps=0.753  ful=0.768  ful=0.755  (1444s)
+  [v2_drift] seed=26/30  bas=0.823  sta=0.789  aps=0.779  ful=0.787  ful=0.809  (1445s)
+  [v2_drift] seed=23/30  bas=0.823  sta=0.810  aps=0.774  ful=0.832  ful=0.774  (1448s)
+  [v2_drift] seed=11/30  bas=0.823  sta=0.800  aps=0.804  ful=0.789  ful=0.783  (1448s)
+  [v2_drift] seed= 7/30  bas=0.823  sta=0.788  aps=0.803  ful=0.786  ful=0.790  (1448s)
+  [v2_drift] seed=20/30  bas=0.823  sta=0.790  aps=0.784  ful=0.772  ful=0.780  (1449s)
+  Level 3 — Drift (v2) done — elapsed 96.8 min
+
+─────────────────────────────────────────────────────────────────
+  Level 4 — Regime Switch (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_regime_switch] seed= 7/30  bas=0.736  sta=0.675  aps=0.710  ful=0.676  ful=0.707  (952s)
+  [v2_regime_switch] seed= 4/30  bas=0.736  sta=0.677  aps=0.630  ful=0.656  ful=0.651  (982s)
+  [v2_regime_switch] seed=19/30  bas=0.736  sta=0.721  aps=0.671  ful=0.718  ful=0.693  (1284s)
+  [v2_regime_switch] seed= 8/30  bas=0.736  sta=0.704  aps=0.703  ful=0.692  ful=0.667  (1289s)
+  [v2_regime_switch] seed=26/30  bas=0.736  sta=0.694  aps=0.638  ful=0.692  ful=0.705  (1297s)
+  [v2_regime_switch] seed= 2/30  bas=0.736  sta=0.683  aps=0.683  ful=0.668  ful=0.672  (1305s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=29/30  bas=0.736  sta=0.703  aps=0.641  ful=0.667  ful=0.662  (1375s)
+  [v2_regime_switch] seed=22/30  bas=0.736  sta=0.701  aps=0.721  ful=0.641  ful=0.651  (1399s)
+  [v2_regime_switch] seed=24/30  bas=0.736  sta=0.675  aps=0.697  ful=0.670  ful=0.627  (1401s)
+  [v2_regime_switch] seed=10/30  bas=0.736  sta=0.695  aps=0.670  ful=0.651  ful=0.669  (1402s)
+  [v2_regime_switch] seed= 9/30  bas=0.736  sta=0.656  aps=0.671  ful=0.642  ful=0.694  (1407s)
+  [v2_regime_switch] seed=25/30  bas=0.736  sta=0.707  aps=0.611  ful=0.654  ful=0.659  (1408s)
+  [v2_regime_switch] seed=12/30  bas=0.736  sta=0.720  aps=0.663  ful=0.675  ful=0.648  (1408s)
+  [v2_regime_switch] seed= 3/30  bas=0.736  sta=0.721  aps=0.664  ful=0.663  ful=0.655  (1420s)
+  [v2_regime_switch] seed= 5/30  bas=0.736  sta=0.678  aps=0.697  ful=0.630  ful=0.617  (1429s)
+  [v2_regime_switch] seed=17/30  bas=0.736  sta=0.695  aps=0.668  ful=0.666  ful=0.667  (1430s)
+  [v2_regime_switch] seed=14/30  bas=0.736  sta=0.688  aps=0.681  ful=0.705  ful=0.676  (1437s)
+  [v2_regime_switch] seed=27/30  bas=0.736  sta=0.667  aps=0.667  ful=0.667  ful=0.653  (1438s)
+  [v2_regime_switch] seed=16/30  bas=0.736  sta=0.703  aps=0.676  ful=0.664  ful=0.641  (1440s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=30/30  bas=0.736  sta=0.748  aps=0.656  ful=0.630  ful=0.667  (1440s)
+  [v2_regime_switch] seed=15/30  bas=0.736  sta=0.706  aps=0.653  ful=0.688  ful=0.665  (1442s)
+  [v2_regime_switch] seed= 1/30  bas=0.736  sta=0.722  aps=0.715  ful=0.669  ful=0.653  (1443s)
+  [v2_regime_switch] seed= 6/30  bas=0.736  sta=0.728  aps=0.696  ful=0.646  ful=0.659  (1444s)
+  [v2_regime_switch] seed=18/30  bas=0.736  sta=0.685  aps=0.685  ful=0.701  ful=0.654  (1445s)
+  [v2_regime_switch] seed=13/30  bas=0.736  sta=0.740  aps=0.658  ful=0.709  ful=0.694  (1446s)
+  [v2_regime_switch] seed=21/30  bas=0.736  sta=0.701  aps=0.649  ful=0.684  ful=0.643  (1446s)
+  [v2_regime_switch] seed=20/30  bas=0.736  sta=0.719  aps=0.659  ful=0.631  ful=0.678  (1449s)
+  [v2_regime_switch] seed=23/30  bas=0.736  sta=0.705  aps=0.643  ful=0.682  ful=0.675  (1453s)
+  [v2_regime_switch] seed=28/30  bas=0.736  sta=0.676  aps=0.663  ful=0.643  ful=0.633  (1454s)
+  [v2_regime_switch] seed=11/30  bas=0.736  sta=0.689  aps=0.670  ful=0.680  ful=0.665  (1457s)
+  Level 4 — Regime Switch (v2) done — elapsed 121.1 min
+
+─────────────────────────────────────────────────────────────────
+  Level 3 — Drift (v2) · LogReg/median_k
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_drift] seed= 2/30  bas=0.835  sta=0.825  aps=0.800  ful=0.858  ful=0.826  (2648s)
+  [v2_drift] seed=12/30  bas=0.835  sta=0.831  aps=0.801  ful=0.739  ful=0.742  (2922s)
+  [v2_drift] seed= 3/30  bas=0.835  sta=0.856  aps=0.824  ful=0.817  ful=0.829  (3361s)
+  [v2_drift] seed= 1/30  bas=0.835  sta=0.819  aps=0.786  ful=0.794  ful=0.751  (3655s)
+  [v2_drift] seed=10/30  bas=0.835  sta=0.815  aps=0.826  ful=0.851  ful=0.864  (3672s)
+  [v2_drift] seed=26/30  bas=0.835  sta=0.829  aps=0.828  ful=0.801  ful=0.829  (3717s)
+  [v2_drift] seed= 5/30  bas=0.835  sta=0.828  aps=0.772  ful=0.826  ful=0.805  (3793s)
+  [v2_drift] seed=22/30  bas=0.835  sta=0.830  aps=0.811  ful=0.826  ful=0.828  (3800s)
+  [v2_drift] seed= 8/30  bas=0.835  sta=0.824  aps=0.812  ful=0.820  ful=0.824  (3816s)
+  [v2_drift] seed= 4/30  bas=0.835  sta=0.823  aps=0.830  ful=0.813  ful=0.820  (3859s)
+  [v2_drift] seed=13/30  bas=0.835  sta=0.831  aps=0.802  ful=0.825  ful=0.819  (3918s)
+  [v2_drift] seed=27/30  bas=0.835  sta=0.841  aps=0.804  ful=0.807  ful=0.809  (3920s)
+  [v2_drift] seed= 9/30  bas=0.835  sta=0.814  aps=0.808  ful=0.822  ful=0.775  (3947s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_drift] seed=30/30  bas=0.835  sta=0.813  aps=0.833  ful=0.847  ful=0.826  (3948s)
+  [v2_drift] seed= 6/30  bas=0.835  sta=0.819  aps=0.824  ful=0.808  ful=0.811  (3950s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_drift] seed=29/30  bas=0.835  sta=0.826  aps=0.818  ful=0.808  ful=0.802  (3960s)
+  [v2_drift] seed=19/30  bas=0.835  sta=0.830  aps=0.842  ful=0.852  ful=0.826  (3966s)
+  [v2_drift] seed=18/30  bas=0.835  sta=0.816  aps=0.819  ful=0.825  ful=0.788  (3969s)
+  [v2_drift] seed=14/30  bas=0.835  sta=0.826  aps=0.807  ful=0.827  ful=0.824  (3976s)
+  [v2_drift] seed=24/30  bas=0.835  sta=0.810  aps=0.819  ful=0.857  ful=0.821  (3982s)
+  [v2_drift] seed=16/30  bas=0.835  sta=0.821  aps=0.818  ful=0.816  ful=0.770  (4001s)
+  [v2_drift] seed= 7/30  bas=0.835  sta=0.811  aps=0.804  ful=0.812  ful=0.814  (4003s)
+  [v2_drift] seed=17/30  bas=0.835  sta=0.834  aps=0.809  ful=0.822  ful=0.826  (4013s)
+  [v2_drift] seed=25/30  bas=0.835  sta=0.846  aps=0.812  ful=0.801  ful=0.803  (4014s)
+  [v2_drift] seed=21/30  bas=0.835  sta=0.820  aps=0.824  ful=0.805  ful=0.817  (4015s)
+  [v2_drift] seed=23/30  bas=0.835  sta=0.822  aps=0.806  ful=0.847  ful=0.827  (4021s)
+  [v2_drift] seed=20/30  bas=0.835  sta=0.815  aps=0.825  ful=0.825  ful=0.827  (4025s)
+  [v2_drift] seed=15/30  bas=0.835  sta=0.831  aps=0.796  ful=0.817  ful=0.822  (4029s)
+  [v2_drift] seed=28/30  bas=0.835  sta=0.824  aps=0.814  ful=0.807  ful=0.808  (4029s)
+  [v2_drift] seed=11/30  bas=0.835  sta=0.821  aps=0.836  ful=0.789  ful=0.788  (4040s)
+  Level 3 — Drift (v2) · LogReg/median_k done — elapsed 188.4 min
+
+─────────────────────────────────────────────────────────────────
+  Level 4 — Regime Switch (v2) · LogReg/median_k
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  [v2_regime_switch] seed=17/30  bas=0.750  sta=0.721  aps=0.659  ful=0.671  ful=0.685  (2610s)
+  [v2_regime_switch] seed=10/30  bas=0.750  sta=0.730  aps=0.702  ful=0.662  ful=0.657  (2625s)
+  [v2_regime_switch] seed=12/30  bas=0.750  sta=0.684  aps=0.680  ful=0.690  ful=0.737  (3545s)
+  [v2_regime_switch] seed=15/30  bas=0.750  sta=0.712  aps=0.651  ful=0.672  ful=0.656  (3550s)
+  [v2_regime_switch] seed= 9/30  bas=0.750  sta=0.681  aps=0.703  ful=0.677  ful=0.719  (3559s)
+  [v2_regime_switch] seed= 4/30  bas=0.750  sta=0.730  aps=0.683  ful=0.693  ful=0.715  (3566s)
+  [v2_regime_switch] seed=16/30  bas=0.750  sta=0.728  aps=0.718  ful=0.678  ful=0.671  (3878s)
+  [v2_regime_switch] seed=24/30  bas=0.750  sta=0.707  aps=0.682  ful=0.693  ful=0.664  (3879s)
+  [v2_regime_switch] seed=19/30  bas=0.750  sta=0.747  aps=0.674  ful=0.722  ful=0.732  (3885s)
+  [v2_regime_switch] seed=18/30  bas=0.750  sta=0.715  aps=0.689  ful=0.677  ful=0.672  (3886s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=27/30  bas=0.750  sta=0.744  aps=0.707  ful=0.670  ful=0.654  (3886s)
+  [v2_regime_switch] seed= 7/30  bas=0.750  sta=0.697  aps=0.699  ful=0.674  ful=0.663  (3899s)
+  [v2_regime_switch] seed= 2/30  bas=0.750  sta=0.712  aps=0.689  ful=0.639  ful=0.657  (3914s)
+  [v2_regime_switch] seed=11/30  bas=0.750  sta=0.728  aps=0.675  ful=0.661  ful=0.646  (3915s)
+  [v2_regime_switch] seed=22/30  bas=0.750  sta=0.710  aps=0.691  ful=0.693  ful=0.688  (3966s)
+  [v2_regime_switch] seed=20/30  bas=0.750  sta=0.736  aps=0.712  ful=0.673  ful=0.709  (3988s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=29/30  bas=0.750  sta=0.724  aps=0.690  ful=0.680  ful=0.684  (3989s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=26/30  bas=0.750  sta=0.748  aps=0.676  ful=0.658  ful=0.654  (3991s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=25/30  bas=0.750  sta=0.704  aps=0.685  ful=0.655  ful=0.674  (3991s)
+  [v2_regime_switch] seed= 1/30  bas=0.750  sta=0.747  aps=0.687  ful=0.670  ful=0.644  (3995s)
+  [v2_regime_switch] seed=14/30  bas=0.750  sta=0.700  aps=0.709  ful=0.680  ful=0.683  (4000s)
+  [v2_regime_switch] seed= 6/30  bas=0.750  sta=0.747  aps=0.723  ful=0.684  ful=0.675  (4001s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=30/30  bas=0.750  sta=0.697  aps=0.662  ful=0.668  ful=0.668  (4001s)
+  [v2_regime_switch] seed= 3/30  bas=0.750  sta=0.729  aps=0.679  ful=0.694  ful=0.674  (4004s)
+  [v2_regime_switch] seed= 5/30  bas=0.750  sta=0.696  aps=0.662  ful=0.655  ful=0.719  (4006s)
+  [v2_regime_switch] seed=13/30  bas=0.750  sta=0.704  aps=0.656  ful=0.670  ful=0.665  (4007s)
+  [v2_regime_switch] seed=23/30  bas=0.750  sta=0.743  aps=0.653  ful=0.733  ful=0.694  (4007s)
+orpsoc_utils.py loaded — shared utilities ready.
+  [v2_regime_switch] seed=28/30  bas=0.750  sta=0.743  aps=0.667  ful=0.660  ful=0.665  (4006s)
+  [v2_regime_switch] seed= 8/30  bas=0.750  sta=0.737  aps=0.683  ful=0.701  ful=0.699  (4024s)
+  [v2_regime_switch] seed=21/30  bas=0.750  sta=0.710  aps=0.681  ful=0.686  ful=0.736  (4033s)
+  Level 4 — Regime Switch (v2) · LogReg/median_k done — elapsed 255.6 min
+
+=================================================================
+  SUMMARY TABLE  (mean AUC ± std across seeds)
+=================================================================
+Level                                Cond1         Cond2         Cond3         Cond4         Cond5
+Level 0 — True Null (v2)    0.524±0.000  0.509±0.017  0.497±0.023  0.499±0.020  0.501±0.020  
+Level 1 — White Noise (v2)  0.912±0.000  0.884±0.017  0.807±0.023  0.888±0.042  0.816±0.035  
+Level 2 — AR(1) Stationary  0.910±0.000  0.862±0.021  0.788±0.023  0.848±0.037  0.804±0.034  
+Level 3 — Drift (v2)        0.823±0.000  0.816±0.018  0.783±0.020  0.788±0.017  0.781±0.024  
+Level 4 — Regime Switch (v2 0.736±0.000  0.699±0.021  0.670±0.025  0.669±0.023  0.663±0.021  
+Level 3 — Drift (v2) · LogR 0.835±0.000  0.825±0.010  0.814±0.015  0.819±0.023  0.811±0.025  
+Level 4 — Regime Switch (v2 0.750±0.000  0.720±0.020  0.684±0.019  0.678±0.019  0.682±0.027  
+
+  FEATURE RECALL  (fraction of true signal features recovered)
+Level                                Cond1         Cond2         Cond3         Cond4         Cond5
+Level 0 — True Null (v2)             1.000         0.229         0.082         0.142         0.140
+Level 1 — White Noise (v2)           1.000         0.828         0.587         0.851         0.608
+Level 2 — AR(1) Stationary           1.000         0.784         0.561         0.733         0.605
+Level 3 — Drift (v2)                 1.000         0.545         0.434         0.527         0.523
+Level 4 — Regime Switch (v2          1.000         0.519         0.385         0.433         0.422
+Level 3 — Drift (v2) · LogR          1.000         0.647         0.507         0.610         0.554
+Level 4 — Regime Switch (v2          1.000         0.692         0.551         0.605         0.602
+
+  PRE/POST SWITCH RECALL  (Level 4 — Regime Switch only)
+Condition                 Pre-switch   Post-switch
+
+=================================================================
+  IMPORTANCE-REINIT ABLATION  (Full Hybrid − no-imp variant)
+=================================================================
+  Level                  FullHybrid  NoImpReinit     Δ AUC   Wilcoxon p
+  Level 0 — True Null        0.4992       0.5012   -0.0019       0.7219
+  Level 1 — White Noi        0.8879       0.8162   +0.0717       0.0000
+  Level 2 — AR(1) Sta        0.8477       0.8043   +0.0434       0.0000
+  Level 3 — Drift (v2        0.7884       0.7809   +0.0074       0.0460
+  Level 4 — Regime Sw        0.6687       0.6634   +0.0053       0.0790
+  Level 3 — Drift (v2        0.8188       0.8107   +0.0081       0.1065
+  Level 4 — Regime Sw        0.6780       0.6819   -0.0039       0.5961
+
+=================================================================
+  HMM TRIGGER READOUT  (fold-by-fold; p_trans/raw_fire/warmup are
+  seed-invariant -- pure function of the data -- so seed 0 is shown)
+=================================================================
+  A trigger at/just-after the switch fold = detector working.
+  Level 0 — True Null (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.00 1.00 0.00 0.00 0.97 1.00 0.00
+    raw_fire    :    0    0    1    0    0    1    1    0
+    final trig  : 0.00 0.00 1.00 0.00 0.00 1.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 1 — White Noise (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.99 1.00 0.03 0.00 0.01 1.00 0.99 0.00
+    raw_fire    :    1    1    0    0    0    1    0    0
+    final trig  : 1.00 0.00 0.00 0.00 0.00 1.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 2 — AR(1) Stationary (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 3 — Drift (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 4 — Regime Switch (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 3 — Drift (v2) · LogReg/median_k
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 4 — Regime Switch (v2) · LogReg/median_k
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+
+Saved: results/step7_ablation_v2.json
+Total time: 255.6 min
+
+Next: run step8_results.py

@@ -1,0 +1,39 @@
+orpsoc_utils.py loaded — shared utilities ready.
+
+T1  walk-forward structure is causal
+  PASS  train prefix / test strictly after / gap=5 / inner split disjoint  — 8 folds
+
+T2  evaluate_ctx() reproduces evaluate() exactly
+  PASS  identical fitness on random subsets (exact ==)  — 18 comparisons over 3 folds
+
+T3  FoldEvalContext leaks nothing
+  PASS  context row counts match X_p / X_v exactly  — Ap=(427, 50) Av=(143, 50), X_te=(105, 50) not included
+  PASS  per-column stats independent of which columns are fitted
+  PASS  standardisation fitted on X_p only
+
+T4  runners are reproducible and order-independent
+  PASS  run_standard_orpsoc reproducible across interleaved runs  — auc=0.877721335269
+  PASS  run_hybrid_orpsoc reproducible across interleaved runs  — auc=0.521044992743
+
+T5  fold partitioning is honest about the structural break
+  PASS  exactly one straddling fold is identified  — phases = ['pre', 'pre', 'pre', 'straddle', 'post', 'post', 'post', 'post']
+  PASS  straddle fold's test window actually contains the break  — fold 4 test [470, 574], 71% post-switch
+  PASS  phases are monotone pre -> straddle -> post
+  PASS  no fold claims adaptability before the break enters TRAINING  — earliest adaptable fold = 5 (straddle fold is 4, so adaptation is impossible there)
+  PASS  stationary levels produce no straddle
+
+T6  benchmark invariants
+  PASS  L0 null: no feature correlates with y beyond sampling noise  — max |corr| = 0.0582 (1/sqrt(n) = 0.0316)
+  PASS  L1 is NOT a null (it is a stationarity control)  — max |corr| = 0.7683
+  PASS  v1 signal features are redundant (3 of 5 buy ~everything)  — AUC(5 signals) - AUC(best 3) = +0.0003
+  PASS  v2 signal features carry independent information  — AUC(5 signals) - AUC(best 3) = +0.0683
+
+T7  objective-function invariants
+  PASS  theta=0.5: one extra feature costs exactly (1-theta)/N  — break-even dAUC = 0.020000
+  PASS  theta=0.7: one extra feature costs exactly (1-theta)/N  — break-even dAUC = 0.008571
+  PASS  theta=0.9: one extra feature costs exactly (1-theta)/N  — break-even dAUC = 0.002222
+  PASS  optimal k is non-decreasing as theta rises  — argmax k by theta: {0.5: 3, 0.7: 3, 1.0: 3}
+
+======================================================================
+  ALL EQUIVALENCE CHECKS PASSED
+======================================================================

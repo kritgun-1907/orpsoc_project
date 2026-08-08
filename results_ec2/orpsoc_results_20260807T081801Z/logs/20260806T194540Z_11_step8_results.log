@@ -1,0 +1,39 @@
+=================================================================
+  STEP 8: Final Analysis & Paper Plots
+=================================================================
+
+  reading results/step7_ablation_v2.json
+Config: 30 seeds  |  60 iters  |  20 particles  |  8 folds  |  FULL MODE
+
+─────────────────────────────────────────────────────────────────
+TABLE 1 — Mean AUC ± Std  (copy into paper)
+─────────────────────────────────────────────────────────────────
+Level                           Baseline            OrPSOC           +APSOLL       Full Hybrid
+──────────────────────────────────────────────────────────────────────────────────────────────
+L1 White Noise                       N/A               N/A               N/A               N/A
+L2 AR(1)                             N/A               N/A               N/A               N/A
+L3 Drift                             N/A               N/A               N/A               N/A
+L4 Regime Switch                     N/A               N/A               N/A               N/A
+
+─────────────────────────────────────────────────────────────────
+TABLE 2 — Wilcoxon Signed-Rank Tests  (Full Hybrid vs others)
+  H0: Full Hybrid = Condition X    α=0.05  (two-tailed)
+─────────────────────────────────────────────────────────────────
+Level                             Baseline              OrPSOC             +APSOLL
+──────────────────────────────────────────────────────────────────────────────────
+L1 White Noise                   N/A (n<5)           N/A (n<5)           N/A (n<5)
+L2 AR(1)                         N/A (n<5)           N/A (n<5)           N/A (n<5)
+L3 Drift                         N/A (n<5)           N/A (n<5)           N/A (n<5)
+L4 Regime Switch                 N/A (n<5)           N/A (n<5)           N/A (n<5)
+
+  *** p<0.001  ** p<0.01  * p<0.05  ns = not significant
+
+─────────────────────────────────────────────────────────────────
+TABLE 3 — Feature Stability (Jaccard)  on Level 4 — Regime Switch
+  High pre-switch + drop at switch + re-stabilise = detector working
+─────────────────────────────────────────────────────────────────
+Traceback (most recent call last):
+  File "/home/ubuntu/orpsoc_research/step8_results.py", line 197, in <module>
+    cond_data = full["regime_switch"]["conditions"][ck]
+                ~~~~^^^^^^^^^^^^^^^^^
+KeyError: 'regime_switch'

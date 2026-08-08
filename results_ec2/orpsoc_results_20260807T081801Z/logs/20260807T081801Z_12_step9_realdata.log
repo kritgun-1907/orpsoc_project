@@ -1,0 +1,71 @@
+orpsoc_utils.py loaded — shared utilities ready.
+====================================================================
+  STEP 9: Real Financial Data Validation
+  Mode: FULL (paper)
+  Seeds=20  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=c4e9cd394b46  checkpoints=on
+====================================================================
+
+── Building datasets ──────────────────────────────────────────
+  [cache] sector prices ← data/raw_sector_prices.pkl
+  sector_etf    X=(6526, 58)  y-balance=0.447  → data/sector_etf.pkl
+  [cache] Fama-French ← data/raw_fama_french.pkl
+  fama_french   X=(6496, 50)  y-balance=0.442  → data/fama_french.pkl
+
+── Ablation: sector_etf ────────────────────────────────────────
+  [sector_etf] checkpoints: 20/20 units already complete in results/checkpoints/step9/c4e9cd394b46
+  Saved: plots/step9_sector_etf_recovery.png
+  [sector_etf] imp-reinit ablation: FullHybrid=0.7808  NoImp=0.7749  Δ=+0.0059  p=0.1942
+  [sector_etf] break_folds=[1, 5]
+    fold      :    1    2    3    4    5    6    7    8
+    p_trans   : 0.99 0.03 1.00 0.00 0.00 0.00 1.00 0.00
+    raw_fire  :    1    0    1    0    0    0    1    0
+    final trig:    1    0    1    0    0    0    1    0
+    (W = warm-up fold, not enough training data to trust the detector -- not evaluated, not counted as no-signal)
+  sector_etf mean AUC:  base=0.8083  stan=0.8052  apso=0.7831  full=0.7808  full=0.7749
+
+── Ablation: fama_french ────────────────────────────────────────
+  [fama_french] checkpoints: 20/20 units already complete in results/checkpoints/step9/c4e9cd394b46
+  Saved: plots/step9_fama_french_recovery.png
+  [fama_french] imp-reinit ablation: FullHybrid=0.7802  NoImp=0.7776  Δ=+0.0026  p=0.1744
+  [fama_french] break_folds=[2, 5]
+    fold      :    1    2    3    4    5    6    7    8
+    p_trans   : 0.00 0.00 0.04 0.00 0.00 0.00 1.00 0.39
+    raw_fire  :    0    0    0    0    0    0    1    1
+    final trig:    0    0    0    0    0    0    1    0
+    (W = warm-up fold, not enough training data to trust the detector -- not evaluated, not counted as no-signal)
+  fama_french mean AUC:  base=0.8390  stan=0.7998  apso=0.7693  full=0.7802  full=0.7776
+
+Saved: results/step9_real_data.json   (3s)
+Done.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.

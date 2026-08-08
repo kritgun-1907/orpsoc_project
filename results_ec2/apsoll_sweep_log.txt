@@ -1,0 +1,121 @@
+=================================================================
+  STEP 7: Ablation Study
+  Mode: FULL (paper)
+  Seeds=30  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=4e388f80e5ac  checkpoints=on
+=================================================================
+
+==========================================================================
+  APSOLL PATIENCE / RE-ARM SWEEP
+==========================================================================
+  seeds=30  iters=60  particles=20 folds=8  theta=0.5
+  grid=[(1, None), (1, 10), (1, 20), (3, None), (3, 10), (3, 20)]
+  workers=30   provenance=f122edc43c7c
+
+── v2_drift|p1|rNone
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7832  fire-rate=1.00  re-arms/fold=0.00
+     full_hybrid    AUC=0.7884  fire-rate=1.00  re-arms/fold=0.00
+
+── v2_drift|p1|r10
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7885  fire-rate=1.00  re-arms/fold=1.96
+     full_hybrid    AUC=0.7911  fire-rate=1.00  re-arms/fold=2.00
+
+── v2_drift|p1|r20
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7853  fire-rate=1.00  re-arms/fold=1.00
+     full_hybrid    AUC=0.7920  fire-rate=1.00  re-arms/fold=1.00
+
+── v2_drift|p3|rNone
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7865  fire-rate=1.00  re-arms/fold=0.00
+     full_hybrid    AUC=0.7915  fire-rate=1.00  re-arms/fold=0.00
+
+── v2_drift|p3|r10
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7918  fire-rate=1.00  re-arms/fold=1.25
+     full_hybrid    AUC=0.7872  fire-rate=1.00  re-arms/fold=1.86
+
+── v2_drift|p3|r20
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.7974  fire-rate=1.00  re-arms/fold=1.00
+     full_hybrid    AUC=0.7879  fire-rate=1.00  re-arms/fold=1.00
+
+── v2_regime_switch|p1|rNone
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6702  fire-rate=1.00  re-arms/fold=0.00
+     full_hybrid    AUC=0.6687  fire-rate=1.00  re-arms/fold=0.00
+
+── v2_regime_switch|p1|r10
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6744  fire-rate=1.00  re-arms/fold=1.98
+     full_hybrid    AUC=0.6725  fire-rate=1.00  re-arms/fold=1.99
+
+── v2_regime_switch|p1|r20
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6743  fire-rate=1.00  re-arms/fold=1.00
+     full_hybrid    AUC=0.6692  fire-rate=1.00  re-arms/fold=1.00
+
+── v2_regime_switch|p3|rNone
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6630  fire-rate=1.00  re-arms/fold=0.00
+     full_hybrid    AUC=0.6693  fire-rate=1.00  re-arms/fold=0.00
+
+── v2_regime_switch|p3|r10
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6681  fire-rate=1.00  re-arms/fold=1.24
+     full_hybrid    AUC=0.6772  fire-rate=1.00  re-arms/fold=1.82
+
+── v2_regime_switch|p3|r20
+   checkpoints: 0/30 units already complete in results/checkpoints/apsoll_sweep/f122edc43c7c
+     apsoll         AUC=0.6670  fire-rate=1.00  re-arms/fold=1.00
+     full_hybrid    AUC=0.6708  fire-rate=1.00  re-arms/fold=1.00
+
+Saved: results/apsoll_sweep.json   (8581s)
+
+==========================================================================
+  SWEEP TABLE — mean AUC across 30 seeds
+  Wilcoxon vs the legacy (patience=1, rearm=None) control,
+  paired by seed, two-tailed.
+==========================================================================
+
+  v2_drift
+    setting             condition        mean AUC   d vs ctrl         p   re-arms
+    -----------------------------------------------------------------------------
+    p=1 r=None          apsoll             0.7832        —  (control)      0.00
+    p=1 r=None          full_hybrid        0.7884        —  (control)      0.00
+    p=1 r=10            apsoll             0.7885     +0.0053    0.1403      1.96
+    p=1 r=10            full_hybrid        0.7911     +0.0027    0.6654      2.00
+    p=1 r=20            apsoll             0.7853     +0.0021    0.8872      1.00
+    p=1 r=20            full_hybrid        0.7920     +0.0037    0.4388      1.00
+    p=3 r=None          apsoll             0.7865     +0.0033    0.7303      0.00
+    p=3 r=None          full_hybrid        0.7915     +0.0031    0.1094      0.00
+    p=3 r=10            apsoll             0.7918     +0.0086    0.1004      1.25
+    p=3 r=10            full_hybrid        0.7872     -0.0011    0.6263      1.86
+    p=3 r=20            apsoll             0.7974     +0.0142    0.0473      1.00
+    p=3 r=20            full_hybrid        0.7879     -0.0005    0.8372      1.00
+
+  v2_regime_switch
+    setting             condition        mean AUC   d vs ctrl         p   re-arms
+    -----------------------------------------------------------------------------
+    p=1 r=None          apsoll             0.6702        —  (control)      0.00
+    p=1 r=None          full_hybrid        0.6687        —  (control)      0.00
+    p=1 r=10            apsoll             0.6744     +0.0042    0.4645      1.98
+    p=1 r=10            full_hybrid        0.6725     +0.0038    0.5158      1.99
+    p=1 r=20            apsoll             0.6743     +0.0040    0.4161      1.00
+    p=1 r=20            full_hybrid        0.6692     +0.0005    0.8199      1.00
+    p=3 r=None          apsoll             0.6630     -0.0072    0.2367      0.00
+    p=3 r=None          full_hybrid        0.6693     +0.0006    0.7327      0.00
+    p=3 r=10            apsoll             0.6681     -0.0021    0.6850      1.24
+    p=3 r=10            full_hybrid        0.6772     +0.0085    0.1519      1.82
+    p=3 r=20            apsoll             0.6670     -0.0032    0.7303      1.00
+    p=3 r=20            full_hybrid        0.6708     +0.0021    0.7303      1.00
+
+  READING THIS TABLE
+    re-arms/fold = 0.00 everywhere means the re-arm never fired and
+    the setting was inert -- report that as a null result, not as
+    'the fix does not help'. A fix that never engages has not been
+    tested. Check the fire-rate printed during the run too: if the
+    trigger itself never fires, patience is moot by construction.

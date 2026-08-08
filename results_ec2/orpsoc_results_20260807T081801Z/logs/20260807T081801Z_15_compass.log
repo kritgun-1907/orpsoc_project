@@ -1,0 +1,41 @@
+[Parallel(n_jobs=6)]: Using backend LokyBackend with 6 concurrent workers.
+orpsoc_utils.py loaded — shared utilities ready.
+[Parallel(n_jobs=6)]: Done   3 out of   6 | elapsed:   16.6s remaining:   16.6s
+[Parallel(n_jobs=6)]: Done   6 out of   6 | elapsed:   35.5s finished
+done in 0.6 min
+
+==========================================================================
+  sector_etf
+==========================================================================
+  RELIABILITY CEILING
+    split-half corr (same distribution, no shift) : +0.974
+    Spearman-Brown corrected to full fold         : +0.987   <- NO causal criterion can exceed this
+
+  criterion     corr w/ test  % of ceiling  gap captured
+  current             +0.263           27%           41%
+  median_k            +0.349           35%           34%
+  univ_sum            +0.481           49%           49%
+  univ_mean           +0.120           12%           28%
+  univ_thresh         -0.110          -11%            5%
+  univ_sqrt           +0.501           51%           49%
+
+==========================================================================
+  v2_regime_switch
+==========================================================================
+  RELIABILITY CEILING
+    split-half corr (same distribution, no shift) : +0.561
+    Spearman-Brown corrected to full fold         : +0.718   <- NO causal criterion can exceed this
+
+  criterion     corr w/ test  % of ceiling  gap captured
+  current             +0.201           28%           34%
+  median_k            +0.244           34%           40%
+  univ_sum            +0.390           54%           40%
+  univ_mean           +0.182           25%          -45%
+  univ_thresh         +0.347           48%           45%
+  univ_sqrt           +0.395           55%           45%
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.

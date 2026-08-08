@@ -1,0 +1,178 @@
+orpsoc_utils.py loaded — shared utilities ready.
+=================================================================
+  STEP 7: Ablation Study
+  Mode: FULL (paper)
+  Seeds=30  MaxIter=60  Particles=20  Splits=8
+  Workers=30 (seeds in parallel; folds always sequential)
+  Provenance=4e388f80e5ac  checkpoints=on
+=================================================================
+
+
+─────────────────────────────────────────────────────────────────
+  Level 0 — True Null (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 0 — True Null (v2) done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 1 — White Noise (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 1 — White Noise (v2) done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 2 — AR(1) Stationary (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 2 — AR(1) Stationary (v2) done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 3 — Drift (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 3 — Drift (v2) done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 4 — Regime Switch (v2)
+─────────────────────────────────────────────────────────────────
+  checkpoints: 0/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 4 — Regime Switch (v2) done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 3 — Drift (v2) · LogReg/median_k
+─────────────────────────────────────────────────────────────────
+  checkpoints: 30/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 3 — Drift (v2) · LogReg/median_k done — elapsed 0.0 min
+
+─────────────────────────────────────────────────────────────────
+  Level 4 — Regime Switch (v2) · LogReg/median_k
+─────────────────────────────────────────────────────────────────
+  checkpoints: 30/30 units already complete in results/checkpoints/step7/4e388f80e5ac
+  Level 4 — Regime Switch (v2) · LogReg/median_k done — elapsed 0.0 min
+
+=================================================================
+  SUMMARY TABLE  (mean AUC ± std across seeds)
+=================================================================
+Level                                Cond1         Cond2         Cond3         Cond4         Cond5
+Level 0 — True Null (v2)    0.524±0.000  0.509±0.017  0.497±0.023  0.499±0.020  0.501±0.020  
+Level 1 — White Noise (v2)  0.912±0.000  0.884±0.017  0.807±0.023  0.888±0.042  0.816±0.035  
+Level 2 — AR(1) Stationary  0.910±0.000  0.862±0.021  0.788±0.023  0.848±0.037  0.804±0.034  
+Level 3 — Drift (v2)        0.823±0.000  0.816±0.018  0.783±0.020  0.788±0.017  0.781±0.024  
+Level 4 — Regime Switch (v2 0.736±0.000  0.699±0.021  0.670±0.025  0.669±0.023  0.663±0.021  
+Level 3 — Drift (v2) · LogR 0.835±0.000  0.825±0.010  0.814±0.015  0.819±0.023  0.811±0.025  
+Level 4 — Regime Switch (v2 0.750±0.000  0.720±0.020  0.684±0.019  0.678±0.019  0.682±0.027  
+
+  FEATURE RECALL  (fraction of true signal features recovered)
+Level                                Cond1         Cond2         Cond3         Cond4         Cond5
+Level 0 — True Null (v2)             1.000         0.229         0.082         0.142         0.140
+Level 1 — White Noise (v2)           1.000         0.828         0.587         0.851         0.608
+Level 2 — AR(1) Stationary           1.000         0.784         0.561         0.733         0.605
+Level 3 — Drift (v2)                 1.000         0.545         0.434         0.527         0.523
+Level 4 — Regime Switch (v2          1.000         0.519         0.385         0.433         0.422
+Level 3 — Drift (v2) · LogR          1.000         0.647         0.507         0.610         0.554
+Level 4 — Regime Switch (v2          1.000         0.692         0.551         0.605         0.602
+
+  PRE/POST SWITCH RECALL  (Level 4 — Regime Switch only)
+Condition                 Pre-switch   Post-switch
+
+=================================================================
+  IMPORTANCE-REINIT ABLATION  (Full Hybrid − no-imp variant)
+=================================================================
+  Level                  FullHybrid  NoImpReinit     Δ AUC   Wilcoxon p
+  Level 0 — True Null        0.4992       0.5012   -0.0019       0.7219
+  Level 1 — White Noi        0.8879       0.8162   +0.0717       0.0000
+  Level 2 — AR(1) Sta        0.8477       0.8043   +0.0434       0.0000
+  Level 3 — Drift (v2        0.7884       0.7809   +0.0074       0.0460
+  Level 4 — Regime Sw        0.6687       0.6634   +0.0053       0.0790
+  Level 3 — Drift (v2        0.8188       0.8107   +0.0081       0.1065
+  Level 4 — Regime Sw        0.6780       0.6819   -0.0039       0.5961
+
+=================================================================
+  HMM TRIGGER READOUT  (fold-by-fold; p_trans/raw_fire/warmup are
+  seed-invariant -- pure function of the data -- so seed 0 is shown)
+=================================================================
+  A trigger at/just-after the switch fold = detector working.
+  Level 0 — True Null (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.00 1.00 0.00 0.00 0.97 1.00 0.00
+    raw_fire    :    0    0    1    0    0    1    1    0
+    final trig  : 0.00 0.00 1.00 0.00 0.00 1.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 1 — White Noise (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.99 1.00 0.03 0.00 0.01 1.00 0.99 0.00
+    raw_fire    :    1    1    0    0    0    1    0    0
+    final trig  : 1.00 0.00 0.00 0.00 0.00 1.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 2 — AR(1) Stationary (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 3 — Drift (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 4 — Regime Switch (v2)
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 3 — Drift (v2) · LogReg/median_k
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+  Level 4 — Regime Switch (v2) · LogReg/median_k
+    fold        :    1    2    3    4    5    6    7    8
+    p_trans     : 0.00 0.04 0.94 0.00 0.69 1.00 0.01 0.00
+    raw_fire    :    0    0    1    0    1    1    0    0
+    final trig  : 0.00 0.00 1.00 0.00 1.00 0.00 0.00 0.00
+    near-switch :    ^^^     (^ = fold within 1 of switch)
+    (W = warm-up, not enough training data yet -- not evaluated, not the same as 'no signal')
+
+Saved: results/step7_ablation_v2.json
+Total time: 0.0 min
+
+Next: run step8_results.py
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
+orpsoc_utils.py loaded — shared utilities ready.
